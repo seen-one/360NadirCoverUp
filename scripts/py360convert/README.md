@@ -1,0 +1,1 @@
+Modded py360convert to add planar to equirectangular (p2e)
