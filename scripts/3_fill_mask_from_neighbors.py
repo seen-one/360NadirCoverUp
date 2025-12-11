@@ -123,6 +123,7 @@ def fill_frames(
     patch_smooth: int = 0,
     threads: int = None,
     coverage_report: bool = False,
+    step: int = 1,
 ):
     frames = list_frames(frames_dir)
     if not frames:
@@ -187,7 +188,12 @@ def fill_frames(
         donor_id = np.full((h, w), -1, dtype=np.int32)
 
         # If window <= 0 interpret as searching the entire sequence
-        max_dist = window if window > 0 else max(i, n - 1 - i)
+        # With stepping, max_dist should account for the reduced number of available frames
+        if window > 0:
+            max_dist = window
+        else:
+            # Estimate max steps possible in the sequence
+            max_dist = len(frames) // step + 1
         # determine neighbor sign order.
 
         # If donor_side is 'auto', determine it per-frame based on current motion
@@ -224,7 +230,7 @@ def fill_frames(
 
         for dist in range(1, max_dist + 1):
             for sign in pref_sign_order:
-                j = i + sign * dist
+                j = i + sign * dist * step
                 if j < 0 or j >= n:
                     continue
                 H_j = cum_H[j]
@@ -260,7 +266,7 @@ def fill_frames(
         if method == "nearest" and filled < num_masked and other_sign_order:
             for dist in range(1, max_dist + 1):
                 for sign in other_sign_order:
-                    j = i + sign * dist
+                    j = i + sign * dist * step
                     if j < 0 or j >= n:
                         continue
                     H_j = cum_H[j]
@@ -293,7 +299,7 @@ def fill_frames(
                 # collect_mask: boolean array of length num_masked indicating which masked pixels still need candidates
                 for dist in range(1, window + 1):
                     for sign in signs:
-                        j = i + sign * dist
+                        j = i + sign * dist * step
                         if j < 0 or j >= n:
                             continue
                         H_j = cum_H[j]
@@ -415,7 +421,7 @@ def fill_frames(
 
     # Process frames in parallel using multithreading
     with ThreadPoolExecutor(max_workers=threads) as executor:
-        futures = {executor.submit(process_frame, i): i for i in range(n)}
+        futures = {executor.submit(process_frame, i): i for i in range(0, n, step)}
         for future in as_completed(futures):
             i, target, filled, num_masked, frame_name, side_used, sun_angle = future.result()
             out_path = out_dir / frame_name
@@ -457,6 +463,7 @@ def parse_args():
     ap.add_argument("--patch_smooth", type=int, default=0, help="Smoothing width in pixels for blending seams between donor patches")
     ap.add_argument("--threads", type=int, default=None, help="Number of threads for parallel processing (default: auto)")
     ap.add_argument("--coverage_report", action="store_true", help="Generate coverage_report.csv")
+    ap.add_argument("--step", type=int, default=1, help="Process every nth frame (default: 1)")
     return ap.parse_args()
 
 
@@ -476,6 +483,7 @@ def main():
         patch_smooth=args.patch_smooth, # Must also be keyword
         threads=args.threads,         # Must also be keyword
         coverage_report=args.coverage_report, # Must also be keyword
+        step=args.step,
     )
 
 
