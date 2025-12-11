@@ -5,6 +5,7 @@ import numpy as np
 import csv
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 
 """Fill masked pixels in each frame by warping adjacent frames (using homographies) into target coordinates
 and selecting pixels from neighbors where the mask is not present.
@@ -155,7 +156,11 @@ def fill_frames(
     coverage_data = []
 
     # Preload frames to speed up warping
-    imgs = [cv2.imread(str(p)) for p in frames]
+    # imgs = [cv2.imread(str(p)) for p in frames]  <-- REMOVED: causing high memory usage
+
+    @lru_cache(maxsize=128)  # Adjust cache size based on available RAM
+    def get_frame(idx):
+        return cv2.imread(str(frames[idx]))
 
     def process_frame(i):
         """Process a single frame - returns (i, target, filled, num_masked, frame_name, donor_side, sun_relative_angle)"""
@@ -165,7 +170,7 @@ def fill_frames(
             # Start with transparent background (BGRA)
             target = np.zeros((h, w, 4), dtype=np.uint8)
         else:
-            target = imgs[i].copy()
+            target = get_frame(i).copy()
         masked_positions = np.where(mask_bool)
         num_masked = int(mask_bool.sum())
         filled = 0
@@ -231,7 +236,7 @@ def fill_frames(
                 H_j_to_i = H_i @ inv_H_j
 
                 # Warp neighbor image into target coordinates
-                warped = cv2.warpPerspective(imgs[j], H_j_to_i, (w, h), flags=cv2.INTER_LINEAR)
+                warped = cv2.warpPerspective(get_frame(j), H_j_to_i, (w, h), flags=cv2.INTER_LINEAR)
                 # Warp neighbor mask (where neighbor is occluded) to target coordinates
                 warped_mask = cv2.warpPerspective(mask_img, H_j_to_i, (w, h), flags=cv2.INTER_NEAREST)
                 neighbor_valid = warped_mask == 0
@@ -266,7 +271,7 @@ def fill_frames(
                         inv_H_j = np.eye(3, dtype=np.float64)
                     H_j_to_i = H_i @ inv_H_j
 
-                    warped = cv2.warpPerspective(imgs[j], H_j_to_i, (w, h), flags=cv2.INTER_LINEAR)
+                    warped = cv2.warpPerspective(get_frame(j), H_j_to_i, (w, h), flags=cv2.INTER_LINEAR)
                     warped_mask = cv2.warpPerspective(mask_img, H_j_to_i, (w, h), flags=cv2.INTER_NEAREST)
                     neighbor_valid = warped_mask == 0
 
@@ -298,7 +303,7 @@ def fill_frames(
                         except np.linalg.LinAlgError:
                             inv_H_j = np.eye(3, dtype=np.float64)
                         H_j_to_i = H_i @ inv_H_j
-                        warped = cv2.warpPerspective(imgs[j], H_j_to_i, (w, h), flags=cv2.INTER_LINEAR)
+                        warped = cv2.warpPerspective(get_frame(j), H_j_to_i, (w, h), flags=cv2.INTER_LINEAR)
                         warped_mask = cv2.warpPerspective(mask_img, H_j_to_i, (w, h), flags=cv2.INTER_NEAREST)
                         neighbor_valid = warped_mask == 0
                         for k, (rr, cc) in enumerate(idxs):
@@ -368,7 +373,7 @@ def fill_frames(
                     except np.linalg.LinAlgError:
                         inv_H_j = np.eye(3, dtype=np.float64)
                     H_j_to_i = H_i @ inv_H_j
-                    warped_donor = cv2.warpPerspective(imgs[int(donor)], H_j_to_i, (w, h), flags=cv2.INTER_LINEAR)
+                    warped_donor = cv2.warpPerspective(get_frame(int(donor)), H_j_to_i, (w, h), flags=cv2.INTER_LINEAR)
                     
                     # Apply weight for this donor
                     weight = blend_weights[:, :, idx:idx+1]
@@ -400,7 +405,7 @@ def fill_frames(
                     alpha = feather_alpha[..., None]
                     blended = (
                         alpha * chosen.astype(np.float32)
-                        + (1.0 - alpha) * imgs[i].astype(np.float32)
+                        + (1.0 - alpha) * get_frame(i).astype(np.float32)
                     ).astype(np.uint8)
                     target[apply_mask] = blended[apply_mask]
                 else:
