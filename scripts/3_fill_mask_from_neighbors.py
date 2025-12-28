@@ -124,6 +124,7 @@ def fill_frames(
     threads: int = None,
     coverage_report: bool = False,
     step: int = 1,
+    debug: bool = False,
 ):
     frames = list_frames(frames_dir)
     if not frames:
@@ -196,17 +197,20 @@ def fill_frames(
             max_dist = len(frames) // step + 1
         # determine neighbor sign order.
 
-        # If donor_side is 'auto', determine it per-frame based on current motion
-        if initial_donor_side == "auto" and sun_azimuth is not None:
+        # Determine sun relative angle if sun_azimuth is provided
+        if sun_azimuth is not None:
             # Use the homography for the transition from this frame to the next
             H_inc = H_increments[i] if i < len(H_increments) else None
             cam_heading = estimate_heading_from_H(H_inc, w, h)
 
             if cam_heading is not None:
                 # normalize angular difference to [-180, 180]
-                diff = (((sun_azimuth - cam_heading + 180) % 360) - 180)
-                sun_relative_angle = diff
-                if abs(diff) <= 90:
+                sun_relative_angle = (((sun_azimuth - cam_heading + 180) % 360) - 180)
+
+        # If donor_side is 'auto', determine it per-frame based on current motion
+        if initial_donor_side == "auto":
+            if sun_relative_angle is not None:
+                if abs(sun_relative_angle) <= 90:
                     current_donor_side = "front"
                 else:
                     current_donor_side = "back"
@@ -417,6 +421,33 @@ def fill_frames(
                 else:
                     target[apply_mask] = chosen[apply_mask]
 
+        if debug:
+            # Draw sun angle arrow and info
+            color = (0, 255, 255, 255) if transparent else (0, 255, 255)
+            # Center of the image
+            center_x, center_y = w // 2, h // 2
+            length = 150 # Larger arrow for center display
+            
+            if sun_relative_angle is not None:
+                # Drawing sun relative to forward (Forward is Up)
+                rad = math.radians(sun_relative_angle)
+                # Forward is (0, -1), Right is (1, 0), Left is (-1, 0)
+                # Relative angle: positive is CCW (towards Left)
+                end_x = int(center_x - length * math.sin(rad))
+                end_y = int(center_y - length * math.cos(rad))
+                
+                cv2.arrowedLine(target, (center_x, center_y), (end_x, end_y), color, 4, tipLength=0.3)
+                
+                # Draw forward arrow for reference
+                cv2.arrowedLine(target, (center_x, center_y), (center_x, center_y - length), (200, 200, 200, 255) if transparent else (200, 200, 200), 2, tipLength=0.2)
+
+                info_text = f"Sun: {sun_relative_angle:.1f} deg"
+                cv2.putText(target, info_text, (center_x - 150, center_y + length + 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
+                cv2.putText(target, f"Side: {current_donor_side}", (center_x - 150, center_y + length + 90), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
+            else:
+                cv2.putText(target, f"Side: {current_donor_side}", (center_x - 150, center_y + 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
+                cv2.putText(target, "Sun angle: N/A", (center_x - 150, center_y + 90), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
+
         return (i, target, filled, num_masked, frames[i].name, current_donor_side, sun_relative_angle)
 
     # Process frames in parallel using multithreading
@@ -464,6 +495,7 @@ def parse_args():
     ap.add_argument("--threads", type=int, default=None, help="Number of threads for parallel processing (default: auto)")
     ap.add_argument("--coverage_report", action="store_true", help="Generate coverage_report.csv")
     ap.add_argument("--step", type=int, default=1, help="Process every nth frame (default: 1)")
+    ap.add_argument("--debug", action="store_true", help="Draw debug info (sun angle, donor side) on frames")
     return ap.parse_args()
 
 
@@ -484,6 +516,7 @@ def main():
         threads=args.threads,         # Must also be keyword
         coverage_report=args.coverage_report, # Must also be keyword
         step=args.step,
+        debug=args.debug,
     )
 
 

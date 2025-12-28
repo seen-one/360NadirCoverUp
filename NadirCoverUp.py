@@ -2,19 +2,26 @@ import os
 import subprocess
 import sys
 
-inputfolder = r"C:\Users\m\Documents\GitHub\NadirCoverUp\sample\3fps"
-maskImagePath = r"C:\Users\m\Documents\GitHub\NadirCoverUp\sample\3840a.png"
+inputfolder = r"H:\fullfpstest_noantishake\jpg"
+maskImagePath = r"H:\fullfpstest\mask.png"
 
-cpuThreads = "4"
+cpuThreads = "8"
 
 initialSunAngle = 180.0
 feather = 20
 patch_smooth = 50
+debugStep3 = True
+
+
+# Frame step: use every nth frame for donor and final images (1 = use all frames)
+frame_step = 5
+use_all_frames_for_donors = False
+
 
 inputHeight = 3840
 inputWidth = inputHeight * 2
 #planarSize = inputHeight / 2
-planarSize = inputHeight /4
+planarSize = inputHeight /2
 planarFov = 160
 
 skipStep1 = True
@@ -57,12 +64,13 @@ if not skipStep2:
         "--mask_path", maskImagePath,
         "--output_csv", os.path.join(OutputStep2, "motion.csv"),
         "--method", "homography",
-        "--size", "512"
+        "--size", "1920"
     )
 
 # Step 3 fill mask from neighbors
 if not skipStep3:
-    Run(
+    donor_step = 1 if use_all_frames_for_donors else frame_step
+    cmd = [
         "scripts/3_fill_mask_from_neighbors.py",
         "--frames_dir", OutputStep1,
         "--mask_path", maskImagePath,
@@ -76,7 +84,11 @@ if not skipStep3:
         "--patch_smooth", str(patch_smooth),
         "--threads", cpuThreads,
         "--transparent",
-    )
+        "--step", str(frame_step),
+    ]
+    if debugStep3:
+        cmd.append("--debug")
+    Run(*cmd)
 
 # Step 4 convert mask to equirectangular
 if not skipStep4:
