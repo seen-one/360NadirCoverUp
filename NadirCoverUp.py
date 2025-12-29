@@ -8,6 +8,7 @@ maskImagePath = r"H:\fullfpstest\mask.png"
 cpuThreads = "8"
 
 initialSunAngle = 180.0
+sunHysteresis = 10.0
 feather = 20
 patch_smooth = 50
 debugStep3 = True
@@ -85,6 +86,7 @@ if not skipStep3:
         "--threads", cpuThreads,
         "--transparent",
         "--step", str(frame_step),
+        "--hysteresis", str(sunHysteresis),
     ]
     if debugStep3:
         cmd.append("--debug")

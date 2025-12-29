@@ -125,6 +125,7 @@ def fill_frames(
     coverage_report: bool = False,
     step: int = 1,
     debug: bool = False,
+    hysteresis: float = 10.0,
 ):
     frames = list_frames(frames_dir)
     if not frames:
@@ -157,6 +158,51 @@ def fill_frames(
 
     coverage_data = []
 
+    # Pre-calculate sun relative angles and donor sides for all frames (to handle hysteresis)
+    frame_info = {}
+    last_side = None
+    
+    for i in range(0, n, step):
+        sun_rel = None
+        current_side = donor_side
+        is_hysteresis = False
+        
+        if sun_azimuth is not None:
+            H_inc = H_increments[i] if i < len(H_increments) else None
+            cam_heading = estimate_heading_from_H(H_inc, w, h)
+            if cam_heading is not None:
+                sun_rel = (((sun_azimuth - cam_heading + 180) % 360) - 180)
+                
+                if donor_side == "auto":
+                    abs_angle = abs(sun_rel)
+                    if last_side is None:
+                        # Initial decision
+                        current_side = "front" if abs_angle <= 90 else "back"
+                    else:
+                        # State-based hysteresis
+                        margin = hysteresis / 2.0
+                        if last_side == "front":
+                            if abs_angle > 90 + margin:
+                                current_side = "back"
+                            else:
+                                current_side = "front"
+                                if abs_angle > 90:
+                                    is_hysteresis = True
+                        else:  # last_side == "back"
+                            if abs_angle < 90 - margin:
+                                current_side = "front"
+                            else:
+                                current_side = "back"
+                                if abs_angle < 90:
+                                    is_hysteresis = True
+        
+        last_side = current_side if current_side in ["front", "back"] else None
+        frame_info[i] = {
+            "sun_angle": sun_rel,
+            "side": current_side,
+            "is_hysteresis": is_hysteresis
+        }
+
     # Preload frames to speed up warping
     # imgs = [cv2.imread(str(p)) for p in frames]  <-- REMOVED: causing high memory usage
 
@@ -167,7 +213,11 @@ def fill_frames(
     def process_frame(i):
         """Process a single frame - returns (i, target, filled, num_masked, frame_name, donor_side, sun_relative_angle)"""
         initial_donor_side = donor_side
-        sun_relative_angle = None
+        info = frame_info[i]
+        sun_relative_angle = info["sun_angle"]
+        current_donor_side = info["side"]
+        is_hysteresis = info["is_hysteresis"]
+
         if transparent:
             # Start with transparent background (BGRA)
             target = np.zeros((h, w, 4), dtype=np.uint8)
@@ -195,30 +245,6 @@ def fill_frames(
         else:
             # Estimate max steps possible in the sequence
             max_dist = len(frames) // step + 1
-        # determine neighbor sign order.
-
-        # Determine sun relative angle if sun_azimuth is provided
-        if sun_azimuth is not None:
-            # Use the homography for the transition from this frame to the next
-            H_inc = H_increments[i] if i < len(H_increments) else None
-            cam_heading = estimate_heading_from_H(H_inc, w, h)
-
-            if cam_heading is not None:
-                # normalize angular difference to [-180, 180]
-                sun_relative_angle = (((sun_azimuth - cam_heading + 180) % 360) - 180)
-
-        # If donor_side is 'auto', determine it per-frame based on current motion
-        if initial_donor_side == "auto":
-            if sun_relative_angle is not None:
-                if abs(sun_relative_angle) <= 90:
-                    current_donor_side = "front"
-                else:
-                    current_donor_side = "back"
-            else:
-                # Fallback if heading can't be estimated for this frame
-                current_donor_side = "both"
-        else:
-            current_donor_side = initial_donor_side
 
         # If donor_side is 'front' or 'back', restrict donors to that side only.
         if current_donor_side == "front":
@@ -443,7 +469,8 @@ def fill_frames(
 
                 info_text = f"Sun: {sun_relative_angle:.1f} deg"
                 cv2.putText(target, info_text, (center_x - 150, center_y + length + 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
-                cv2.putText(target, f"Side: {current_donor_side}", (center_x - 150, center_y + length + 90), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
+                hyst_label = " (H)" if is_hysteresis else ""
+                cv2.putText(target, f"Side: {current_donor_side}{hyst_label}", (center_x - 150, center_y + length + 90), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
             else:
                 cv2.putText(target, f"Side: {current_donor_side}", (center_x - 150, center_y + 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
                 cv2.putText(target, "Sun angle: N/A", (center_x - 150, center_y + 90), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
@@ -496,6 +523,7 @@ def parse_args():
     ap.add_argument("--coverage_report", action="store_true", help="Generate coverage_report.csv")
     ap.add_argument("--step", type=int, default=1, help="Process every nth frame (default: 1)")
     ap.add_argument("--debug", action="store_true", help="Draw debug info (sun angle, donor side) on frames")
+    ap.add_argument("--hysteresis", type=float, default=10.0, help="Hysteresis range in degrees for donor side switching")
     return ap.parse_args()
 
 
@@ -517,6 +545,7 @@ def main():
         coverage_report=args.coverage_report, # Must also be keyword
         step=args.step,
         debug=args.debug,
+        hysteresis=args.hysteresis,
     )
 
 
