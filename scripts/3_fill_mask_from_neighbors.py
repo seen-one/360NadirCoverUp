@@ -162,16 +162,62 @@ def fill_frames(
     frame_info = {}
     last_side = None
     
+    # Define sun vector in Frame 0
+    sun_pt0 = None
+    center_pt0 = None
+    if sun_azimuth is not None:
+        sun_rad = math.radians(sun_azimuth)
+        # 0 is Up, 90 is Right
+        # Vector points from center to sun
+        vec_len = 1000.0
+        cx, cy = w / 2.0, h / 2.0
+        # In image coords: Up is -y, Right is +x
+        # sun vector = (sin(theta), -cos(theta))
+        sun_pt0 = np.array([cx + vec_len * math.sin(sun_rad), cy - vec_len * math.cos(sun_rad), 1.0], dtype=np.float64)
+        center_pt0 = np.array([cx, cy, 1.0], dtype=np.float64)
+
     for i in range(0, n, step):
         sun_rel = None
         current_side = donor_side
         is_hysteresis = False
+        motion_vec = None
+        
+        # Calculate instantaneous motion vector from H_increments
+        if i < len(H_increments):
+            H_inc = H_increments[i]
+            if H_inc is not None:
+                p0 = np.array([w/2.0, h/2.0, 1.0])
+                p1 = H_inc @ p0
+                if p1[2] != 0:
+                    p1 /= p1[2]
+                    # The user says "Down when movement is Up".
+                    # p1 - p0 is the pixel displacement. To get travel vector, we use:
+                    motion_vec = (p0[0] - p1[0], p0[1] - p1[1])
         
         if sun_azimuth is not None:
-            H_inc = H_increments[i] if i < len(H_increments) else None
-            cam_heading = estimate_heading_from_H(H_inc, w, h)
-            if cam_heading is not None:
-                sun_rel = (((sun_azimuth - cam_heading + 180) % 360) - 180)
+            # cum_H[i] maps Frame 0 pixels -> Frame i pixels?
+            # Or k -> 0? Based on warpPerspective usage: H_j_to_i = H_i @ inv(H_j) = (i->0) @ (0->j) = i->j.
+            # cv2.warpPerspective expects Dst -> Src. To warp j to i, we need i -> j.
+            # So H[i] must be i -> 0.
+            # To get sun angle in frame i, we need Sun at 0 mapped to i.
+            # sun_i = inv(H[i]) @ sun_0
+            H = cum_H[i] 
+            try:
+                H_inv = np.linalg.inv(H)
+            except np.linalg.LinAlgError:
+                H_inv = np.eye(3)
+
+            p_sun = H_inv @ sun_pt0
+            p_cen = H_inv @ center_pt0
+            
+            if p_sun[2] != 0 and p_cen[2] != 0:
+                p_sun_n = p_sun / p_sun[2]
+                p_cen_n = p_cen / p_cen[2]
+                dx = p_sun_n[0] - p_cen_n[0]
+                dy = p_sun_n[1] - p_cen_n[1]
+                
+                # atan2(dx, -dy) maps Up to 0.
+                sun_rel = math.degrees(math.atan2(dx, -dy))
                 
                 if donor_side == "auto":
                     abs_angle = abs(sun_rel)
@@ -195,12 +241,13 @@ def fill_frames(
                                 current_side = "back"
                                 if abs_angle < 90:
                                     is_hysteresis = True
-        
+
         last_side = current_side if current_side in ["front", "back"] else None
         frame_info[i] = {
             "sun_angle": sun_rel,
             "side": current_side,
-            "is_hysteresis": is_hysteresis
+            "is_hysteresis": is_hysteresis,
+            "motion_vec": motion_vec
         }
 
     # Preload frames to speed up warping
@@ -217,6 +264,7 @@ def fill_frames(
         sun_relative_angle = info["sun_angle"]
         current_donor_side = info["side"]
         is_hysteresis = info["is_hysteresis"]
+        motion_vec = info["motion_vec"]
 
         if transparent:
             # Start with transparent background (BGRA)
@@ -448,32 +496,31 @@ def fill_frames(
                     target[apply_mask] = chosen[apply_mask]
 
         if debug:
-            # Draw sun angle arrow and info
-            color = (0, 255, 255, 255) if transparent else (0, 255, 255)
-            # Center of the image
             center_x, center_y = w // 2, h // 2
-            length = 150 # Larger arrow for center display
+            c_motion = (255, 255, 0, 255) if transparent else (255, 255, 0) # Cyan
+            c_sun = (0, 255, 255, 255) if transparent else (0, 255, 255)    # Yellow
+            c_ref = (200, 200, 200, 255) if transparent else (200, 200, 200) # Gray
             
+            # --- Draw Motion Vector (Cyan) ---
+            if motion_vec is not None:
+                dx, dy = motion_vec
+                amp = 50.0
+                cv2.arrowedLine(target, (center_x, center_y), (int(center_x + dx * amp), int(center_y + dy * amp)), c_motion, 4, tipLength=0.3)
+                cv2.putText(target, f"Motion: ({dx:.2f}, {dy:.2f})", (center_x - 150, center_y + 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, c_motion, 2)
+            
+            # --- Draw Sun Arrow (Yellow) ---
             if sun_relative_angle is not None:
-                # Drawing sun relative to forward (Forward is Up)
                 rad = math.radians(sun_relative_angle)
-                # Forward is (0, -1), Right is (1, 0), Left is (-1, 0)
-                # Relative angle: positive is CCW (towards Left)
-                end_x = int(center_x - length * math.sin(rad))
-                end_y = int(center_y - length * math.cos(rad))
+                end_x = int(center_x + 150 * math.sin(rad))
+                end_y = int(center_y - 150 * math.cos(rad))
+                cv2.arrowedLine(target, (center_x, center_y), (end_x, end_y), c_sun, 4, tipLength=0.3)
                 
-                cv2.arrowedLine(target, (center_x, center_y), (end_x, end_y), color, 4, tipLength=0.3)
-                
-                # Draw forward arrow for reference
-                cv2.arrowedLine(target, (center_x, center_y), (center_x, center_y - length), (200, 200, 200, 255) if transparent else (200, 200, 200), 2, tipLength=0.2)
-
-                info_text = f"Sun: {sun_relative_angle:.1f} deg"
-                cv2.putText(target, info_text, (center_x - 150, center_y + length + 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
                 hyst_label = " (H)" if is_hysteresis else ""
-                cv2.putText(target, f"Side: {current_donor_side}{hyst_label}", (center_x - 150, center_y + length + 90), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
-            else:
-                cv2.putText(target, f"Side: {current_donor_side}", (center_x - 150, center_y + 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
-                cv2.putText(target, "Sun angle: N/A", (center_x - 150, center_y + 90), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
+                cv2.putText(target, f"Sun: {sun_relative_angle:.1f} deg", (center_x - 150, center_y + 140), cv2.FONT_HERSHEY_SIMPLEX, 0.7, c_sun, 2)
+                cv2.putText(target, f"Side: {current_donor_side}{hyst_label}", (center_x - 150, center_y + 180), cv2.FONT_HERSHEY_SIMPLEX, 0.7, c_sun, 2)
+
+            # Reference Forward (Up)
+            cv2.arrowedLine(target, (center_x, center_y), (center_x, center_y - 50), c_ref, 2, tipLength=0.2)
 
         return (i, target, filled, num_masked, frames[i].name, current_donor_side, sun_relative_angle)
 

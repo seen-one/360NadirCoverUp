@@ -7,7 +7,7 @@ maskImagePath = r"H:\fullfpstest\mask.png"
 
 cpuThreads = "8"
 
-initialSunAngle = 180.0
+initialSunAngle = 120
 sunHysteresis = 10.0
 feather = 20
 patch_smooth = 50
