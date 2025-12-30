@@ -322,6 +322,7 @@ def fill_frames(
         current_side = donor_side
         motion_vec = None
         sun_rel = None
+        north_rel = None
         is_hysteresis = False
 
         # Calculate instantaneous motion vector from H_increments (for debug)
@@ -341,6 +342,10 @@ def fill_frames(
             raw_angle = azimuth - (heading + gps_offset)
             # normalize to -180, 180
             sun_rel = (raw_angle + 180) % 360 - 180
+            
+            # North is 0 azimuth
+            raw_north = 0.0 - (heading + gps_offset)
+            north_rel = (raw_north + 180) % 360 - 180
             
             abs_angle = abs(sun_rel)
             if last_side is None:
@@ -372,6 +377,7 @@ def fill_frames(
             "side": current_side,
             "motion_vec": motion_vec,
             "sun_angle": sun_rel, # Can be None if no GPS
+            "north_angle": north_rel,
             "is_hysteresis": is_hysteresis
         }
 
@@ -388,6 +394,7 @@ def fill_frames(
         current_donor_side = info["side"]
         motion_vec = info["motion_vec"]
         sun_relative_angle = info["sun_angle"]
+        north_relative_angle = info["north_angle"]
         is_hysteresis = info["is_hysteresis"]
 
         if transparent:
@@ -637,6 +644,15 @@ def fill_frames(
             # Show side
             hyst_label = " (H)" if is_hysteresis else ""
             cv2.putText(target, f"Side: {current_donor_side}{hyst_label}", (center_x - 150, center_y + 140), cv2.FONT_HERSHEY_SIMPLEX, 0.7, c_ref, 2)
+            
+            # Draw North Arrow
+            if north_relative_angle is not None:
+                c_north = (0, 0, 255, 255) if transparent else (0, 0, 255)      # Red
+                rad_n = math.radians(north_relative_angle)
+                end_x_n = int(center_x + 150 * math.sin(rad_n))
+                end_y_n = int(center_y - 150 * math.cos(rad_n))
+                cv2.arrowedLine(target, (center_x, center_y), (end_x_n, end_y_n), c_north, 4, tipLength=0.3)
+                cv2.putText(target, "North", (end_x_n, end_y_n - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, c_north, 2)
             
             # Draw Sun Arrow
             if sun_relative_angle is not None:
