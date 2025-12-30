@@ -2,8 +2,8 @@ import os
 import subprocess
 import sys
 
-inputfolder = r"H:\fullfpstest_noantishake\jpg"
-maskImagePath = r"H:\fullfpstest\mask.png"
+inputfolder = r"H:\fullfpstest_angled\jpg"
+maskImagePath = r"H:\fullfpstest_angled\mask.png"
 
 cpuThreads = "8"
 
@@ -12,6 +12,7 @@ feather = 20
 # GPS Tracking Configuration
 cameraHeadingOffset = 0.0   # Degrees to add to GPS heading (e.g., 90 if camera faces right)
 gpsSpeedThreshold = 2.0     # Minimum speed (m/s) to update heading; below this, hold last heading
+gpxTimeOffset = -11         # Hours to add to GPX time to get true UTC (e.g., -11 if camera saved local time as UTC)
 patch_smooth = 50
 debugStep3 = True
 
@@ -28,10 +29,10 @@ planarSize = inputHeight /2
 planarFov = 160
 
 skipStep1 = True
-skipStep2 = True
+skipStep2 = False
 skipStep3 = False
-skipStep4 = True
-skipStep5 = True
+skipStep4 = False
+skipStep5 = False
 skipStep6 = True
 
 OutputStep1 = os.path.join(inputfolder, "1")
@@ -90,6 +91,7 @@ if not skipStep3:
         "--step", str(frame_step),
         "--gps_offset", str(cameraHeadingOffset),
         "--gps_threshold", str(gpsSpeedThreshold),
+        "--gps_time_offset", str(gpxTimeOffset),
     ]
     if debugStep3:
         cmd.append("--debug")

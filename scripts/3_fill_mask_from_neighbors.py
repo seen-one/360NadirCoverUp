@@ -113,7 +113,7 @@ def estimate_heading_from_H(H, img_w, img_h):
     heading_rad = math.atan2(-dy, dx)
     return math.degrees(heading_rad)
 
-def get_gps_based_sun_angles(src_dir: Path, n_frames: int, speed_threshold: float = 2.0):
+def get_gps_based_sun_angles(src_dir: Path, n_frames: int, speed_threshold: float = 2.0, time_offset_hours: float = 0.0):
     """
     Finds a GPX file in src_dir, parses it, and computes the Sun's position relative to the camera
     for each frame.
@@ -136,6 +136,9 @@ def get_gps_based_sun_angles(src_dir: Path, n_frames: int, speed_threshold: floa
     for track in gpx.tracks:
         for segment in track.segments:
             for point in segment.points:
+                 # Adjust time if offset provided
+                 if time_offset_hours != 0:
+                     point.time += timedelta(hours=time_offset_hours)
                  points.append(point)
                  
     if not points:
@@ -275,6 +278,7 @@ def fill_frames(
     src_dir: Path = None,
     gps_offset: float = 0.0,
     gps_threshold: float = 2.0,
+    gps_time_offset: float = 0.0,
 ):
     frames = list_frames(frames_dir)
     if not frames:
@@ -313,7 +317,7 @@ def fill_frames(
     gps_info = None
     if src_dir and donor_side == "auto":
         print(f"Loading GPS data from {src_dir}...")
-        gps_info = get_gps_based_sun_angles(src_dir, n, gps_threshold)
+        gps_info = get_gps_based_sun_angles(src_dir, n, gps_threshold, gps_time_offset)
         
     last_side = None
     hysteresis = 10.0 # Hardcoded hysteresis
@@ -712,6 +716,7 @@ def parse_args():
     ap.add_argument("--src_dir", type=str, help="Source directory containing GPX file")
     ap.add_argument("--gps_offset", type=float, default=0.0, help="Offset to add to camera heading")
     ap.add_argument("--gps_threshold", type=float, default=2.0, help="Minimum speed to update heading")
+    ap.add_argument("--gps_time_offset", type=float, default=0.0, help="Hours to add to GPX timestamps to get UTC")
     return ap.parse_args()
 
 
@@ -735,6 +740,7 @@ def main():
         src_dir=Path(args.src_dir) if args.src_dir else None,
         gps_offset=args.gps_offset,
         gps_threshold=args.gps_threshold,
+        gps_time_offset=args.gps_time_offset,
     )
 
 
