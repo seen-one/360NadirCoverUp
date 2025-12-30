@@ -117,15 +117,8 @@ def fill_frames(
     window: int,
     method: str,
     donor_side: str = "both",
-    sun_azimuth: float = None,
-    feather: int = 0,
-    transparent: bool = False,
-    patch_smooth: int = 0,
-    threads: int = None,
-    coverage_report: bool = False,
     step: int = 1,
     debug: bool = False,
-    hysteresis: float = 10.0,
 ):
     frames = list_frames(frames_dir)
     if not frames:
@@ -158,31 +151,14 @@ def fill_frames(
 
     coverage_data = []
 
-    # Pre-calculate sun relative angles and donor sides for all frames (to handle hysteresis)
+    # Pre-calculate minimal frame info
     frame_info = {}
-    last_side = None
     
-    # Define sun vector in Frame 0
-    sun_pt0 = None
-    center_pt0 = None
-    if sun_azimuth is not None:
-        sun_rad = math.radians(sun_azimuth)
-        # 0 is Up, 90 is Right
-        # Vector points from center to sun
-        vec_len = 1000.0
-        cx, cy = w / 2.0, h / 2.0
-        # In image coords: Up is -y, Right is +x
-        # sun vector = (sin(theta), -cos(theta))
-        sun_pt0 = np.array([cx + vec_len * math.sin(sun_rad), cy - vec_len * math.cos(sun_rad), 1.0], dtype=np.float64)
-        center_pt0 = np.array([cx, cy, 1.0], dtype=np.float64)
-
     for i in range(0, n, step):
-        sun_rel = None
         current_side = donor_side
-        is_hysteresis = False
         motion_vec = None
-        
-        # Calculate instantaneous motion vector from H_increments
+
+        # Calculate instantaneous motion vector from H_increments (for debug)
         if i < len(H_increments):
             H_inc = H_increments[i]
             if H_inc is not None:
@@ -190,63 +166,16 @@ def fill_frames(
                 p1 = H_inc @ p0
                 if p1[2] != 0:
                     p1 /= p1[2]
-                    # The user says "Down when movement is Up".
-                    # p1 - p0 is the pixel displacement. To get travel vector, we use:
+                    # Travel vector (opposite of feature motion)
                     motion_vec = (p0[0] - p1[0], p0[1] - p1[1])
         
-        if sun_azimuth is not None:
-            # cum_H[i] maps Frame 0 pixels -> Frame i pixels?
-            # Or k -> 0? Based on warpPerspective usage: H_j_to_i = H_i @ inv(H_j) = (i->0) @ (0->j) = i->j.
-            # cv2.warpPerspective expects Dst -> Src. To warp j to i, we need i -> j.
-            # So H[i] must be i -> 0.
-            # To get sun angle in frame i, we need Sun at 0 mapped to i.
-            # sun_i = inv(H[i]) @ sun_0
-            H = cum_H[i] 
-            try:
-                H_inv = np.linalg.inv(H)
-            except np.linalg.LinAlgError:
-                H_inv = np.eye(3)
+        # If donor_side is 'auto', we can't do it anymore without sun_azimuth. 
+        # Fall back to 'both' or just keep current_side if it's explicitly front/back
+        if donor_side == "auto":
+            current_side = "both"
 
-            p_sun = H_inv @ sun_pt0
-            p_cen = H_inv @ center_pt0
-            
-            if p_sun[2] != 0 and p_cen[2] != 0:
-                p_sun_n = p_sun / p_sun[2]
-                p_cen_n = p_cen / p_cen[2]
-                dx = p_sun_n[0] - p_cen_n[0]
-                dy = p_sun_n[1] - p_cen_n[1]
-                
-                # atan2(dx, -dy) maps Up to 0.
-                sun_rel = math.degrees(math.atan2(dx, -dy))
-                
-                if donor_side == "auto":
-                    abs_angle = abs(sun_rel)
-                    if last_side is None:
-                        # Initial decision
-                        current_side = "front" if abs_angle <= 90 else "back"
-                    else:
-                        # State-based hysteresis
-                        margin = hysteresis / 2.0
-                        if last_side == "front":
-                            if abs_angle > 90 + margin:
-                                current_side = "back"
-                            else:
-                                current_side = "front"
-                                if abs_angle > 90:
-                                    is_hysteresis = True
-                        else:  # last_side == "back"
-                            if abs_angle < 90 - margin:
-                                current_side = "front"
-                            else:
-                                current_side = "back"
-                                if abs_angle < 90:
-                                    is_hysteresis = True
-
-        last_side = current_side if current_side in ["front", "back"] else None
         frame_info[i] = {
-            "sun_angle": sun_rel,
             "side": current_side,
-            "is_hysteresis": is_hysteresis,
             "motion_vec": motion_vec
         }
 
@@ -258,12 +187,9 @@ def fill_frames(
         return cv2.imread(str(frames[idx]))
 
     def process_frame(i):
-        """Process a single frame - returns (i, target, filled, num_masked, frame_name, donor_side, sun_relative_angle)"""
-        initial_donor_side = donor_side
+        """Process a single frame - returns (i, target, filled, num_masked, frame_name, donor_side)"""
         info = frame_info[i]
-        sun_relative_angle = info["sun_angle"]
         current_donor_side = info["side"]
-        is_hysteresis = info["is_hysteresis"]
         motion_vec = info["motion_vec"]
 
         if transparent:
@@ -498,7 +424,6 @@ def fill_frames(
         if debug:
             center_x, center_y = w // 2, h // 2
             c_motion = (255, 255, 0, 255) if transparent else (255, 255, 0) # Cyan
-            c_sun = (0, 255, 255, 255) if transparent else (0, 255, 255)    # Yellow
             c_ref = (200, 200, 200, 255) if transparent else (200, 200, 200) # Gray
             
             # --- Draw Motion Vector (Cyan) ---
@@ -508,44 +433,35 @@ def fill_frames(
                 cv2.arrowedLine(target, (center_x, center_y), (int(center_x + dx * amp), int(center_y + dy * amp)), c_motion, 4, tipLength=0.3)
                 cv2.putText(target, f"Motion: ({dx:.2f}, {dy:.2f})", (center_x - 150, center_y + 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, c_motion, 2)
             
-            # --- Draw Sun Arrow (Yellow) ---
-            if sun_relative_angle is not None:
-                rad = math.radians(sun_relative_angle)
-                end_x = int(center_x + 150 * math.sin(rad))
-                end_y = int(center_y - 150 * math.cos(rad))
-                cv2.arrowedLine(target, (center_x, center_y), (end_x, end_y), c_sun, 4, tipLength=0.3)
-                
-                hyst_label = " (H)" if is_hysteresis else ""
-                cv2.putText(target, f"Sun: {sun_relative_angle:.1f} deg", (center_x - 150, center_y + 140), cv2.FONT_HERSHEY_SIMPLEX, 0.7, c_sun, 2)
-                cv2.putText(target, f"Side: {current_donor_side}{hyst_label}", (center_x - 150, center_y + 180), cv2.FONT_HERSHEY_SIMPLEX, 0.7, c_sun, 2)
-
             # Reference Forward (Up)
             cv2.arrowedLine(target, (center_x, center_y), (center_x, center_y - 50), c_ref, 2, tipLength=0.2)
+            
+            # Show side
+            cv2.putText(target, f"Side: {current_donor_side}", (center_x - 150, center_y + 140), cv2.FONT_HERSHEY_SIMPLEX, 0.7, c_ref, 2)
 
-        return (i, target, filled, num_masked, frames[i].name, current_donor_side, sun_relative_angle)
+        return (i, target, filled, num_masked, frames[i].name, current_donor_side)
 
     # Process frames in parallel using multithreading
     with ThreadPoolExecutor(max_workers=threads) as executor:
         futures = {executor.submit(process_frame, i): i for i in range(0, n, step)}
         for future in as_completed(futures):
-            i, target, filled, num_masked, frame_name, side_used, sun_angle = future.result()
+            i, target, filled, num_masked, frame_name, side_used = future.result()
             out_path = out_dir / frame_name
             # If transparent output requested, ensure we save as PNG so alpha is preserved
             if transparent and out_path.suffix.lower() != ".png":
                 out_path = out_path.with_suffix('.png')
             cv2.imwrite(str(out_path), target)
             if coverage_report:
-                coverage_data.append({"frame": frame_name, "masked_pixels": int(num_masked), "filled_pixels": int(filled), "side_used": side_used, "sun_angle_rel": f"{sun_angle:.1f}" if sun_angle is not None else ""})
+                coverage_data.append({"frame": frame_name, "masked_pixels": int(num_masked), "filled_pixels": int(filled), "side_used": side_used})
             
-            angle_str = f", sun_angle: {sun_angle:6.1f}°" if sun_angle is not None else ""
-            print(f"Frame {i}/{n-1}: filled {filled}/{num_masked} (side: {side_used}){angle_str}")
+            print(f"Frame {i}/{n-1}: filled {filled}/{num_masked} (side: {side_used})")
     
     # write coverage CSV if requested
     if coverage_report:
         # Sort coverage report by frame number
         coverage_data.sort(key=lambda x: x["frame"])
         with (out_dir / "coverage_report.csv").open("w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["frame", "masked_pixels", "filled_pixels", "side_used", "sun_angle_rel"])
+            writer = csv.DictWriter(f, fieldnames=["frame", "masked_pixels", "filled_pixels", "side_used"])
             writer.writeheader()
             writer.writerows(coverage_data)
         print(f"Filled frames written to {out_dir}; report saved as coverage_report.csv")
@@ -561,16 +477,14 @@ def parse_args():
     ap.add_argument("--out_dir", required=True)
     ap.add_argument("--window", type=int, default=5, help="Maximum number of frames before/after to search")
     ap.add_argument("--method", choices=["nearest", "median"], default="nearest")
-    ap.add_argument("--donor_side", choices=["both", "front", "back", "auto"], default="both", help="Restrict donor frames to one side: 'front' (later), 'back' (earlier), 'both', or 'auto' to pick based on sun azimuth (per-frame)")
-    ap.add_argument("--sun_azimuth", type=float, help="Sun azimuth in degrees (0 = camera forward). Used when --donor_side auto.")
+    ap.add_argument("--donor_side", choices=["both", "front", "back", "auto"], default="both", help="Restrict donor frames to one side")
     ap.add_argument("--feather", type=int, default=0, help="Feather width in pixels for blending mask edges")
     ap.add_argument("--transparent", action="store_true", help="Output only filled pixels on transparent background (PNG)")
     ap.add_argument("--patch_smooth", type=int, default=0, help="Smoothing width in pixels for blending seams between donor patches")
     ap.add_argument("--threads", type=int, default=None, help="Number of threads for parallel processing (default: auto)")
     ap.add_argument("--coverage_report", action="store_true", help="Generate coverage_report.csv")
     ap.add_argument("--step", type=int, default=1, help="Process every nth frame (default: 1)")
-    ap.add_argument("--debug", action="store_true", help="Draw debug info (sun angle, donor side) on frames")
-    ap.add_argument("--hysteresis", type=float, default=10.0, help="Hysteresis range in degrees for donor side switching")
+    ap.add_argument("--debug", action="store_true", help="Draw debug info (donor side) on frames")
     return ap.parse_args()
 
 
@@ -584,7 +498,6 @@ def main():
         args.window,
         args.method,
         donor_side=args.donor_side, # Keyword argument
-        sun_azimuth=args.sun_azimuth, # Must also be keyword
         feather=args.feather,         # Must also be keyword
         transparent=args.transparent, # Must also be keyword
         patch_smooth=args.patch_smooth, # Must also be keyword
@@ -592,7 +505,6 @@ def main():
         coverage_report=args.coverage_report, # Must also be keyword
         step=args.step,
         debug=args.debug,
-        hysteresis=args.hysteresis,
     )
 
 
