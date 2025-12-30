@@ -6,6 +6,10 @@ import csv
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
+import gpxpy
+import gpxpy.gpx
+from pysolar.solar import get_azimuth
+from datetime import datetime, timezone, timedelta
 
 """Fill masked pixels in each frame by warping adjacent frames (using homographies) into target coordinates
 and selecting pixels from neighbors where the mask is not present.
@@ -109,6 +113,150 @@ def estimate_heading_from_H(H, img_w, img_h):
     heading_rad = math.atan2(-dy, dx)
     return math.degrees(heading_rad)
 
+def get_gps_based_sun_angles(src_dir: Path, n_frames: int, speed_threshold: float = 2.0):
+    """
+    Finds a GPX file in src_dir, parses it, and computes the Sun's position relative to the camera
+    for each frame.
+    
+    Returns: list of (solar_azimuth, camera_heading) tuples, or None if no GPX found.
+    """
+    gpx_files = list(src_dir.glob("*.gpx"))
+    if not gpx_files:
+        print(f"No GPX files found in {src_dir}")
+        return None
+    
+    # Use the first GPX file found
+    gpx_path = gpx_files[0]
+    print(f"Using GPX file: {gpx_path}")
+    
+    with open(gpx_path, 'r') as gpx_file:
+        gpx = gpxpy.parse(gpx_file)
+        
+    points = []
+    for track in gpx.tracks:
+        for segment in track.segments:
+            for point in segment.points:
+                 points.append(point)
+                 
+    if not points:
+        return None
+        
+    # Assume video duration maps to GPX duration
+    start_time = points[0].time
+    end_time = points[-1].time
+    duration = (end_time - start_time).total_seconds()
+    
+    if duration <= 0:
+        return None
+        
+    fps = n_frames / duration
+    print(f"Estimated FPS from GPX: {fps:.2f} (Duration: {duration:.2f}s, Frames: {n_frames})")
+    
+    results = []
+    
+    # -----------------------------------------------------
+    # Look-ahead to find the initial heading if starting stationary
+    # -----------------------------------------------------
+    last_valid_heading = 0.0
+    found_initial = False
+    
+    for i in range(len(points) - 1):
+        p1 = points[i]
+        p2 = points[i+1]
+        dist = p1.distance_2d(p2)
+        dt = (p2.time - p1.time).total_seconds()
+        
+        if dt > 0:
+            speed = dist / dt
+            if speed >= speed_threshold:
+                # Found first movement
+                lat1 = math.radians(p1.latitude)
+                lat2 = math.radians(p2.latitude)
+                dLon = math.radians(p2.longitude - p1.longitude)
+                
+                y = math.sin(dLon) * math.cos(lat2)
+                x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLon)
+                
+                bearing = math.atan2(y, x)
+                bearing = math.degrees(bearing)
+                last_valid_heading = (bearing + 360) % 360
+                
+                print(f"Initial heading determined from movement at index {i}: {last_valid_heading:.2f} deg")
+                found_initial = True
+                break
+                
+    if not found_initial:
+        print("Warning: No significant movement found in GPX track. Defaulting to North (0.0).")
+    
+    for i in range(n_frames):
+        # Calculate timestamp for this frame
+        frame_time = start_time + timedelta(seconds=i / fps)
+        
+        # Local search around estimated index
+        est_idx = int((i / n_frames) * len(points))
+        est_idx = max(0, min(est_idx, len(points)-1))
+        
+        min_dt = float('inf')
+        best_p = points[est_idx]
+        closest_idx = est_idx
+        
+        search_range = 500
+        start_search = max(0, est_idx - search_range)
+        end_search = min(len(points), est_idx + search_range)
+        
+        for k in range(start_search, end_search):
+            p = points[k]
+            dt = abs((p.time - frame_time).total_seconds())
+            if dt < min_dt:
+                min_dt = dt
+                best_p = p
+                closest_idx = k
+            
+        # Get Solar Azimuth
+        azimuth = get_azimuth(best_p.latitude, best_p.longitude, frame_time.replace(tzinfo=timezone.utc))
+        
+        # Get Camera Heading
+        idx_a = closest_idx
+        idx_b = closest_idx + 1
+        if idx_b >= len(points):
+            idx_b = closest_idx
+            idx_a = closest_idx - 1
+            
+        if idx_a < 0:
+            current_heading = last_valid_heading
+        else:
+            pa = points[idx_a]
+            pb = points[idx_b]
+            
+            dist = pa.distance_2d(pb)
+            time_diff = (pb.time - pa.time).total_seconds()
+            
+            if time_diff > 0:
+                speed = dist / time_diff
+                if speed >= speed_threshold:
+                    lat1 = math.radians(pa.latitude)
+                    lat2 = math.radians(pb.latitude)
+                    diffLong = math.radians(pb.longitude - pa.longitude)
+                    
+                    x = math.sin(diffLong) * math.cos(lat2)
+                    y = math.cos(lat1) * math.sin(lat2) - (math.sin(lat1) * math.cos(lat2) * math.cos(diffLong))
+                    
+                    initial_bearing = math.atan2(x, y)
+                    initial_bearing = math.degrees(initial_bearing)
+                    compass_bearing = (initial_bearing + 360) % 360
+                    
+                    last_valid_heading = compass_bearing
+                    current_heading = compass_bearing
+                else:
+                    current_heading = last_valid_heading
+            else:
+                 current_heading = last_valid_heading
+                 
+        results.append((azimuth, current_heading))
+        
+    return results
+
+
 def fill_frames(
     frames_dir: Path,
     mask_path: Path,
@@ -117,8 +265,16 @@ def fill_frames(
     window: int,
     method: str,
     donor_side: str = "both",
+    feather: int = 0,
+    transparent: bool = False,
+    patch_smooth: int = 0,
+    threads: int = None,
+    coverage_report: bool = False,
     step: int = 1,
     debug: bool = False,
+    src_dir: Path = None,
+    gps_offset: float = 0.0,
+    gps_threshold: float = 2.0,
 ):
     frames = list_frames(frames_dir)
     if not frames:
@@ -154,9 +310,19 @@ def fill_frames(
     # Pre-calculate minimal frame info
     frame_info = {}
     
+    gps_info = None
+    if src_dir and donor_side == "auto":
+        print(f"Loading GPS data from {src_dir}...")
+        gps_info = get_gps_based_sun_angles(src_dir, n, gps_threshold)
+        
+    last_side = None
+    hysteresis = 10.0 # Hardcoded hysteresis
+    
     for i in range(0, n, step):
         current_side = donor_side
         motion_vec = None
+        sun_rel = None
+        is_hysteresis = False
 
         # Calculate instantaneous motion vector from H_increments (for debug)
         if i < len(H_increments):
@@ -169,14 +335,44 @@ def fill_frames(
                     # Travel vector (opposite of feature motion)
                     motion_vec = (p0[0] - p1[0], p0[1] - p1[1])
         
-        # If donor_side is 'auto', we can't do it anymore without sun_azimuth. 
-        # Fall back to 'both' or just keep current_side if it's explicitly front/back
-        if donor_side == "auto":
-            current_side = "both"
+        if gps_info:
+            azimuth, heading = gps_info[i]
+            # sun_rel = azimuth - (heading + offset)
+            raw_angle = azimuth - (heading + gps_offset)
+            # normalize to -180, 180
+            sun_rel = (raw_angle + 180) % 360 - 180
+            
+            abs_angle = abs(sun_rel)
+            if last_side is None:
+                current_side = "front" if abs_angle <= 90 else "back"
+            else:
+                margin = hysteresis / 2.0
+                if last_side == "front":
+                    if abs_angle > 90 + margin:
+                        current_side = "back"
+                    else:
+                        current_side = "front"
+                        if abs_angle > 90:
+                            is_hysteresis = True
+                else:  # last_side == "back"
+                    if abs_angle < 90 - margin:
+                        current_side = "front"
+                    else:
+                        current_side = "back"
+                        if abs_angle < 90:
+                             is_hysteresis = True
+        
+        # If donor_side is 'auto' but NO GPS info, fallback to 'both'
+        if donor_side == "auto" and not gps_info:
+             current_side = "both"
+             
+        last_side = current_side if current_side in ["front", "back"] else None
 
         frame_info[i] = {
             "side": current_side,
-            "motion_vec": motion_vec
+            "motion_vec": motion_vec,
+            "sun_angle": sun_rel, # Can be None if no GPS
+            "is_hysteresis": is_hysteresis
         }
 
     # Preload frames to speed up warping
@@ -187,10 +383,12 @@ def fill_frames(
         return cv2.imread(str(frames[idx]))
 
     def process_frame(i):
-        """Process a single frame - returns (i, target, filled, num_masked, frame_name, donor_side)"""
+        """Process a single frame - returns (i, target, filled, num_masked, frame_name, donor_side, sun_angle)"""
         info = frame_info[i]
         current_donor_side = info["side"]
         motion_vec = info["motion_vec"]
+        sun_relative_angle = info["sun_angle"]
+        is_hysteresis = info["is_hysteresis"]
 
         if transparent:
             # Start with transparent background (BGRA)
@@ -437,7 +635,17 @@ def fill_frames(
             cv2.arrowedLine(target, (center_x, center_y), (center_x, center_y - 50), c_ref, 2, tipLength=0.2)
             
             # Show side
-            cv2.putText(target, f"Side: {current_donor_side}", (center_x - 150, center_y + 140), cv2.FONT_HERSHEY_SIMPLEX, 0.7, c_ref, 2)
+            hyst_label = " (H)" if is_hysteresis else ""
+            cv2.putText(target, f"Side: {current_donor_side}{hyst_label}", (center_x - 150, center_y + 140), cv2.FONT_HERSHEY_SIMPLEX, 0.7, c_ref, 2)
+            
+            # Draw Sun Arrow
+            if sun_relative_angle is not None:
+                c_sun = (0, 255, 255, 255) if transparent else (0, 255, 255)    # Yellow
+                rad_s = math.radians(sun_relative_angle)
+                end_x_s = int(center_x + 150 * math.sin(rad_s))
+                end_y_s = int(center_y - 150 * math.cos(rad_s))
+                cv2.arrowedLine(target, (center_x, center_y), (end_x_s, end_y_s), c_sun, 4, tipLength=0.3)
+                cv2.putText(target, f"Sun: {sun_relative_angle:.1f} deg", (center_x - 150, center_y + 180), cv2.FONT_HERSHEY_SIMPLEX, 0.7, c_sun, 2)
 
         return (i, target, filled, num_masked, frames[i].name, current_donor_side)
 
@@ -485,6 +693,9 @@ def parse_args():
     ap.add_argument("--coverage_report", action="store_true", help="Generate coverage_report.csv")
     ap.add_argument("--step", type=int, default=1, help="Process every nth frame (default: 1)")
     ap.add_argument("--debug", action="store_true", help="Draw debug info (donor side) on frames")
+    ap.add_argument("--src_dir", type=str, help="Source directory containing GPX file")
+    ap.add_argument("--gps_offset", type=float, default=0.0, help="Offset to add to camera heading")
+    ap.add_argument("--gps_threshold", type=float, default=2.0, help="Minimum speed to update heading")
     return ap.parse_args()
 
 
@@ -505,6 +716,9 @@ def main():
         coverage_report=args.coverage_report, # Must also be keyword
         step=args.step,
         debug=args.debug,
+        src_dir=Path(args.src_dir) if args.src_dir else None,
+        gps_offset=args.gps_offset,
+        gps_threshold=args.gps_threshold,
     )
 
 

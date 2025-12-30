@@ -8,6 +8,10 @@ maskImagePath = r"H:\fullfpstest\mask.png"
 cpuThreads = "8"
 
 feather = 20
+
+# GPS Tracking Configuration
+cameraHeadingOffset = 0.0   # Degrees to add to GPS heading (e.g., 90 if camera faces right)
+gpsSpeedThreshold = 2.0     # Minimum speed (m/s) to update heading; below this, hold last heading
 patch_smooth = 50
 debugStep3 = True
 
@@ -75,6 +79,7 @@ if not skipStep3:
         "--mask_path", maskImagePath,
         "--motion_csv", os.path.join(OutputStep2, "motion.csv"),
         "--out_dir", OutputStep3,
+        "--src_dir", inputfolder,
         "--window", "0",
         "--method", "nearest",
         "--donor_side", "auto",
@@ -83,6 +88,8 @@ if not skipStep3:
         "--threads", cpuThreads,
         "--transparent",
         "--step", str(frame_step),
+        "--gps_offset", str(cameraHeadingOffset),
+        "--gps_threshold", str(gpsSpeedThreshold),
     ]
     if debugStep3:
         cmd.append("--debug")
