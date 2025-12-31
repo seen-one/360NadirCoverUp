@@ -322,6 +322,8 @@ def fill_frames(
     if src_dir and donor_side == "auto":
         print(f"Loading GPS data from {src_dir}...")
         gps_info = get_gps_based_sun_angles(src_dir, n, gps_threshold, gps_time_offset)
+        if gps_info is None:
+            raise RuntimeError(f"Donor side is 'auto' but no GPX file found or valid path data found in {src_dir}. GPX is required for automated sun tracking.")
         
     last_side = None
     hysteresis = 10.0 # Hardcoded hysteresis
@@ -375,10 +377,8 @@ def fill_frames(
                         if abs_angle < 90:
                              is_hysteresis = True
         
-        # If donor_side is 'auto' but NO GPS info, fallback to 'both'
-        if donor_side == "auto" and not gps_info:
-             current_side = "both"
-             
+        # If donor_side is 'auto' but NO GPS info, it's now a fatal error (handled above)
+        
         last_side = current_side if current_side in ["front", "back"] else None
 
         frame_info[i] = {
