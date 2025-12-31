@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 import py360convert
 import concurrent.futures
+from tqdm import tqdm
 
 
 def process_image(file, inputfolder, outputfolder, planar_size, planar_fov):
@@ -49,7 +50,6 @@ def process_image(file, inputfolder, outputfolder, planar_size, planar_fov):
     out_path = os.path.join(outputfolder, base_name + '.png')
     try:
         out_img.save(out_path)
-        print(f"Processed {file} -> {out_path}")
     except Exception as e:
         print(f"Failed to save {out_path}: {e}")
 
@@ -103,9 +103,7 @@ except Exception as e:
     sys.exit(1)
 
 # Process images in parallel
-if threads is None:
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        executor.map(lambda f: process_image(f, inputfolder, outputfolder, planar_size, planar_fov), image_files)
-else:
-    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-        executor.map(lambda f: process_image(f, inputfolder, outputfolder, planar_size, planar_fov), image_files)
+max_workers = threads if threads is not None else None
+print(f"Found {len(image_files)} images. Converting...")
+with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+    list(tqdm(executor.map(lambda f: process_image(f, inputfolder, outputfolder, planar_size, planar_fov), image_files), total=len(image_files)))

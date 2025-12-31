@@ -10,6 +10,7 @@ import gpxpy
 import gpxpy.gpx
 from pysolar.solar import get_azimuth
 from datetime import datetime, timezone, timedelta
+from tqdm import tqdm
 
 """Fill masked pixels in each frame by warping adjacent frames (using homographies) into target coordinates
 and selecting pixels from neighbors where the mask is not present.
@@ -672,6 +673,9 @@ def fill_frames(
     # Process frames in parallel using multithreading
     with ThreadPoolExecutor(max_workers=threads) as executor:
         futures = {executor.submit(process_frame, i): i for i in range(0, n, step)}
+        
+        # Wrap the completion with tqdm
+        pbar = tqdm(total=len(futures), desc="Filling masks")
         for future in as_completed(futures):
             i, target, filled, num_masked, frame_name, side_used = future.result()
             out_path = out_dir / frame_name
@@ -682,7 +686,8 @@ def fill_frames(
             if coverage_report:
                 coverage_data.append({"frame": frame_name, "masked_pixels": int(num_masked), "filled_pixels": int(filled), "side_used": side_used})
             
-            print(f"Frame {i}/{n-1}: filled {filled}/{num_masked} (side: {side_used})")
+            pbar.update(1)
+        pbar.close()
     
     # write coverage CSV if requested
     if coverage_report:

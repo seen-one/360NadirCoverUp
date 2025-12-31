@@ -57,10 +57,12 @@ def RunCmd(cmd, *args):
 
 # Step 1 generate equirectangular to planar top down for all images in folder
 if not skipStep1:
+    print("\n--- Step 1/5: Converting equirectangular to planar top-down ---")
     Run("scripts/1_equirect_to_planar.py", inputfolder, OutputStep1, str(int(planarSize)), str(int(planarFov)), parallel_workers)
 
 # Step 2 motion estimation
 if not skipStep2:
+    print("\n--- Step 2/5: Estimating motion (homography) ---")
     Run(
         "scripts/2_estimate_motion.py",
         "--frames_dir", OutputStep1,
@@ -72,6 +74,7 @@ if not skipStep2:
 
 # Step 3 fill mask from neighbors
 if not skipStep3:
+    print("\n--- Step 3/5: Filling masked areas from neighbor frames ---")
     donor_step = 1 if use_all_frames_for_donors else frame_step
     cmd = [
         "scripts/3_fill_mask_from_neighbors.py",
@@ -98,10 +101,14 @@ if not skipStep3:
 
 # Step 4 convert mask to equirectangular
 if not skipStep4:
+    print("\n--- Step 4/5: Converting patched areas back to equirectangular ---")
     Run("scripts/4_planar_to_equirect.py", OutputStep3, OutputStep4, str(int(inputHeight)), str(int(inputWidth)), str(int(planarFov)), parallel_workers)
 
 # Step 5 overlay patched nadir area back onto original image
 if not skipStep5:
+    print("\n--- Step 5/5: Overlaying patched areas onto original images ---")
     Run("scripts/5_overlay_nadir.py", inputfolder, OutputStep4, OutputStep5, "--threads", parallel_workers)
+
+print("\nProcessing complete!")
 
 # input("Press Enter to continue...")

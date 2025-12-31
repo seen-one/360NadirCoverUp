@@ -7,6 +7,7 @@ from typing import List, Tuple
 
 import cv2
 import numpy as np
+from tqdm import tqdm
 
 
 def list_image_files(frames_dir: Path) -> List[Path]:
@@ -209,6 +210,7 @@ def process_sequence(frames: List[Path], mask_path: Path, method: str, size: int
     cumulative_dy = 0.0
     cumulative_rot = 0.0
 
+    pbar = tqdm(total=len(frames)-1, desc="Estimating motion")
     for i in range(1, len(frames)):
         next_gray = cv2.imread(str(frames[i]), cv2.IMREAD_GRAYSCALE)
         if next_gray is None:
@@ -270,6 +272,8 @@ def process_sequence(frames: List[Path], mask_path: Path, method: str, size: int
         }
         results.append(record)
         prev_gray = next_gray
+        pbar.update(1)
+    pbar.close()
     return results
 
 

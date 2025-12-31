@@ -4,6 +4,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import glob
 import cv2
 import numpy as np
+from tqdm import tqdm
 
 
 def recombine_image(original_path, overlay_path, out_path):
@@ -119,12 +120,15 @@ def recombine_dir(orig_dir, overlay_dir, out_dir, workers=8):
 
     with ProcessPoolExecutor(max_workers=workers) as ex:
         futures = {ex.submit(recombine_image, *t): t for t in tasks}
+        pbar = tqdm(total=len(futures), desc="Overlaying patches")
         for fut in as_completed(futures):
             t = futures[fut]
             try:
                 fut.result()
             except Exception as e:
                 print(f"Error processing {t[0]} with overlay {t[1]}: {e}")
+            pbar.update(1)
+        pbar.close()
 
 
 def parse_args():

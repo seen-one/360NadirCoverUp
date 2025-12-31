@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 import concurrent.futures
 import cv2
+from tqdm import tqdm
 
 # Import utils from py360convert for coordinate generation
 from py360convert.utils import (
@@ -140,7 +141,6 @@ def process_image(file, inputfolder, outputfolder, map1, map2):
     
     try:
         cv2.imwrite(out_path, equirect)
-        print(f"Processed {file} -> {out_path}")
     except Exception as e:
         print(f"Failed to save {out_path}: {e}")
 
@@ -233,4 +233,4 @@ print(f"Processing {len(image_files)} images using {threads} threads...")
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
     # We use a lambda to pass the constant map arguments
-    executor.map(lambda f: process_image(f, inputfolder, outputfolder, map1, map2), image_files)
+    list(tqdm(executor.map(lambda f: process_image(f, inputfolder, outputfolder, map1, map2), image_files), total=len(image_files)))
