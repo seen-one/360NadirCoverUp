@@ -359,21 +359,21 @@ def fill_frames(
             
             abs_angle = abs(sun_rel)
             if last_side is None:
-                current_side = "front" if abs_angle <= 90 else "back"
+                current_side = "back" if abs_angle <= 90 else "front"
             else:
                 margin = hysteresis / 2.0
-                if last_side == "front":
+                if last_side == "back":
                     if abs_angle > 90 + margin:
-                        current_side = "back"
-                    else:
                         current_side = "front"
+                    else:
+                        current_side = "back"
                         if abs_angle > 90:
                             is_hysteresis = True
-                else:  # last_side == "back"
+                else:  # last_side == "front"
                     if abs_angle < 90 - margin:
-                        current_side = "front"
-                    else:
                         current_side = "back"
+                    else:
+                        current_side = "front"
                         if abs_angle < 90:
                              is_hysteresis = True
         
