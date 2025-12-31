@@ -33,7 +33,6 @@ skipStep2 = True
 skipStep3 = False
 skipStep4 = False
 skipStep5 = False
-skipStep6 = True
 
 OutputStep1 = os.path.join(inputfolder, "1")
 OutputStep2 = os.path.join(inputfolder, "2")
@@ -104,10 +103,5 @@ if not skipStep4:
 # Step 5 overlay patched nadir area back onto original image
 if not skipStep5:
     Run("scripts/5_overlay_nadir.py", inputfolder, OutputStep4, OutputStep5, "--threads", parallel_workers)
-
-
-# Step 6 sharpen result - see if there is a way to do it not using imagemagick
-if not skipStep6:
-    Run("scripts/6_sharpen.py", OutputStep4, OutputStep5)
 
 # input("Press Enter to continue...")
