@@ -2,19 +2,19 @@ import os
 import subprocess
 import sys
 
-inputfolder = r"H:\fullfpstest_angled\jpg"
-maskImagePath = r"H:\fullfpstest_angled\mask.png"
+inputfolder = r"H:\fullfpstest_3\jpg"
+maskImagePath = r"H:\fullfpstest_3\mask.png"
 
-cpuThreads = "8"
+parallel_workers = "8"
 
-feather = 20
+feather = 30
 
 # GPS Tracking Configuration
 cameraHeadingOffset = 0.0   # Degrees to add to GPS heading (e.g., 90 if camera faces right)
 gpsSpeedThreshold = 2.0     # Minimum speed (m/s) to update heading; below this, hold last heading
 gpxTimeOffset = -11         # Hours to add to GPX time to get true UTC (e.g., -11 if camera saved local time as UTC)
 patch_smooth = 50
-debugStep3 = True
+debugStep3 = False
 
 
 # Frame step: use every nth frame for donor and final images (1 = use all frames)
@@ -29,7 +29,7 @@ planarSize = inputHeight /2
 planarFov = 160
 
 skipStep1 = True
-skipStep2 = False
+skipStep2 = True
 skipStep3 = False
 skipStep4 = False
 skipStep5 = False
@@ -58,7 +58,7 @@ def RunCmd(cmd, *args):
 
 # Step 1 generate equirectangular to planar top down for all images in folder
 if not skipStep1:
-    Run("scripts/1_equirect_to_planar.py", inputfolder, OutputStep1, str(int(planarSize)), str(int(planarFov)), cpuThreads)
+    Run("scripts/1_equirect_to_planar.py", inputfolder, OutputStep1, str(int(planarSize)), str(int(planarFov)), parallel_workers)
 
 # Step 2 motion estimation
 if not skipStep2:
@@ -86,7 +86,7 @@ if not skipStep3:
         "--donor_side", "auto",
         "--feather", str(feather),
         "--patch_smooth", str(patch_smooth),
-        "--threads", cpuThreads,
+        "--threads", parallel_workers,
         "--transparent",
         "--step", str(frame_step),
         "--gps_offset", str(cameraHeadingOffset),
@@ -99,11 +99,12 @@ if not skipStep3:
 
 # Step 4 convert mask to equirectangular
 if not skipStep4:
-    Run("scripts/4_planar_to_equirect.py", OutputStep3, OutputStep4, str(int(inputHeight)), str(int(inputWidth)), str(int(planarFov)), cpuThreads)
+    Run("scripts/4_planar_to_equirect.py", OutputStep3, OutputStep4, str(int(inputHeight)), str(int(inputWidth)), str(int(planarFov)), parallel_workers)
 
 # Step 5 overlay patched nadir area back onto original image
 if not skipStep5:
-    Run("scripts/5_overlay_nadir.py", inputfolder, OutputStep4, OutputStep5, "--threads", cpuThreads)
+    Run("scripts/5_overlay_nadir.py", inputfolder, OutputStep4, OutputStep5, "--threads", parallel_workers)
+
 
 # Step 6 sharpen result - see if there is a way to do it not using imagemagick
 if not skipStep6:
