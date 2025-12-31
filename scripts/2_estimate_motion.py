@@ -296,6 +296,7 @@ def parse_args():
     ap.add_argument("--method", choices=["affine", "dense", "homography"], default="affine", help="Motion estimation method")
     ap.add_argument("--output_csv", default="motion.csv", help="Output CSV path")
     ap.add_argument("--size", type=int, default=0, help="Fixed size (px) to resize both width and height before estimation (e.g. 512). Use 0 to keep original size.")
+    ap.add_argument("--limit", type=int, default=0, help="Limit number of frames to process")
     return ap.parse_args()
 
 
@@ -309,6 +310,8 @@ def main():
     if len(frames) < 2:
         print("Need at least two frames to estimate motion.")
         return
+    if args.limit > 0:
+        frames = frames[:args.limit]
     print(f"Found {len(frames)} frames. Using method '{args.method}'. Size={args.size}")
     records = process_sequence(frames, mask_path, args.method, args.size)
     write_csv(records, Path(args.output_csv))

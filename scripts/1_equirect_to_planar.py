@@ -54,43 +54,26 @@ def process_image(file, inputfolder, outputfolder, planar_size, planar_fov):
         print(f"Failed to save {out_path}: {e}")
 
 
-def _usage_and_exit():
-    print("Usage: python 1_equirect_to_rectilinear.py <inputfolder> <outputfolder> [planarSize planarFov] [threads]")
-    print("  planarSize: integer output width/height (default 2048)")
-    print("  planarFov: field of view in degrees (default 160)")
-    print("  threads: optional integer number of worker threads")
-    sys.exit(1)
+import argparse
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Convert equirectangular images to planar top-down.")
+    parser.add_argument("inputfolder", help="Input folder with equirectangular images")
+    parser.add_argument("outputfolder", help="Output folder for planar images")
+    # To maintain compatibility with positional arguments for planarSize, planarFov, threads
+    parser.add_argument("planar_size", type=int, nargs="?", default=2048, help="Planar size (default 2048)")
+    parser.add_argument("planar_fov", type=float, nargs="?", default=160.0, help="Planar FOV (default 160.0)")
+    parser.add_argument("threads", type=int, nargs="?", default=None, help="Number of threads")
+    parser.add_argument("--limit", type=int, default=0, help="Limit number of frames to process")
+    return parser.parse_args()
 
-# Acceptable forms:
-#  - script inputfolder outputfolder
-#  - script inputfolder outputfolder planarSize planarFov
-#  - script inputfolder outputfolder planarSize planarFov threads
-if not (len(sys.argv) in (3, 5, 6)):
-    _usage_and_exit()
-
-inputfolder = sys.argv[1]
-outputfolder = sys.argv[2]
-
-# defaults
-planar_size = 2048
-planar_fov = 160.0
-threads = None
-
-if len(sys.argv) == 5 or len(sys.argv) == 6:
-    try:
-        planar_size = int(sys.argv[3])
-        planar_fov = float(sys.argv[4])
-    except ValueError:
-        print("planarSize and planarFov must be numbers")
-        _usage_and_exit()
-
-if len(sys.argv) == 6:
-    try:
-        threads = int(sys.argv[5])
-    except ValueError:
-        print("threads must be an integer")
-        _usage_and_exit()
+args = parse_args()
+inputfolder = args.inputfolder
+outputfolder = args.outputfolder
+planar_size = args.planar_size
+planar_fov = args.planar_fov
+threads = args.threads
+limit = args.limit
 
 # create output folder if necessary
 os.makedirs(outputfolder, exist_ok=True)
@@ -98,6 +81,9 @@ os.makedirs(outputfolder, exist_ok=True)
 # Get list of image files
 try:
     image_files = [f for f in os.listdir(inputfolder) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    image_files.sort()
+    if limit > 0:
+        image_files = image_files[:limit]
 except Exception as e:
     print(f"Failed to list input folder '{inputfolder}': {e}")
     sys.exit(1)

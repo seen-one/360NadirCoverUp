@@ -280,10 +280,13 @@ def fill_frames(
     gps_offset: float = 0.0,
     gps_threshold: float = 2.0,
     gps_time_offset: float = 0.0,
+    limit: int = 0,
 ):
     frames = list_frames(frames_dir)
     if not frames:
         raise RuntimeError("No frames found")
+    if limit > 0:
+        frames = frames[:limit]
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Read homography increments from CSV
@@ -722,6 +725,7 @@ def parse_args():
     ap.add_argument("--gps_offset", type=float, default=0.0, help="Offset to add to camera heading")
     ap.add_argument("--gps_threshold", type=float, default=2.0, help="Minimum speed to update heading")
     ap.add_argument("--gps_time_offset", type=float, default=0.0, help="Hours to add to GPX timestamps to get UTC")
+    ap.add_argument("--limit", type=int, default=0, help="Limit number of frames to process")
     return ap.parse_args()
 
 
@@ -746,6 +750,7 @@ def main():
         gps_offset=args.gps_offset,
         gps_threshold=args.gps_threshold,
         gps_time_offset=args.gps_time_offset,
+        limit=args.limit,
     )
 
 

@@ -16,6 +16,7 @@ gpxTimeOffset = -11         # Hours to add to GPX time to get true UTC (e.g., -1
 patch_smooth = 50
 debugStep3 = False
 
+limit_frames = 100  # Process only the first n frames; 0 or for all (before frame stepping)
 
 # Frame step: use every nth frame for donor and final images (1 = use all frames)
 frame_step = 5
@@ -28,8 +29,8 @@ inputWidth = inputHeight * 2
 planarSize = inputHeight /2
 planarFov = 160
 
-skipStep1 = True
-skipStep2 = True
+skipStep1 = False
+skipStep2 = False
 skipStep3 = False
 skipStep4 = False
 skipStep5 = False
@@ -58,19 +59,23 @@ def RunCmd(cmd, *args):
 # Step 1 generate equirectangular to planar top down for all images in folder
 if not skipStep1:
     print("\n--- Step 1/5: Converting equirectangular to planar top-down ---")
-    Run("scripts/1_equirect_to_planar.py", inputfolder, OutputStep1, str(int(planarSize)), str(int(planarFov)), parallel_workers)
+    cmd = ["scripts/1_equirect_to_planar.py", inputfolder, OutputStep1, str(int(planarSize)), str(int(planarFov)), parallel_workers]
+    if limit_frames: cmd += ["--limit", str(limit_frames)]
+    Run(*cmd)
 
 # Step 2 motion estimation
 if not skipStep2:
     print("\n--- Step 2/5: Estimating motion (homography) ---")
-    Run(
+    cmd = [
         "scripts/2_estimate_motion.py",
         "--frames_dir", OutputStep1,
         "--mask_path", maskImagePath,
         "--output_csv", os.path.join(OutputStep2, "motion.csv"),
         "--method", "homography",
         "--size", "1920"
-    )
+    ]
+    if limit_frames: cmd += ["--limit", str(limit_frames)]
+    Run(*cmd)
 
 # Step 3 fill mask from neighbors
 if not skipStep3:
@@ -97,17 +102,22 @@ if not skipStep3:
     ]
     if debugStep3:
         cmd.append("--debug")
+    if limit_frames: cmd += ["--limit", str(limit_frames)]
     Run(*cmd)
 
 # Step 4 convert mask to equirectangular
 if not skipStep4:
     print("\n--- Step 4/5: Converting patched areas back to equirectangular ---")
-    Run("scripts/4_planar_to_equirect.py", OutputStep3, OutputStep4, str(int(inputHeight)), str(int(inputWidth)), str(int(planarFov)), parallel_workers)
+    cmd = ["scripts/4_planar_to_equirect.py", OutputStep3, OutputStep4, str(int(inputHeight)), str(int(inputWidth)), str(int(planarFov)), parallel_workers]
+    if limit_frames: cmd += ["--limit", str(limit_frames)]
+    Run(*cmd)
 
 # Step 5 overlay patched nadir area back onto original image
 if not skipStep5:
     print("\n--- Step 5/5: Overlaying patched areas onto original images ---")
-    Run("scripts/5_overlay_nadir.py", inputfolder, OutputStep4, OutputStep5, "--threads", parallel_workers)
+    cmd = ["scripts/5_overlay_nadir.py", inputfolder, OutputStep4, OutputStep5, "--threads", parallel_workers]
+    if limit_frames: cmd += ["--limit", str(limit_frames)]
+    Run(*cmd)
 
 print("\nProcessing complete!")
 

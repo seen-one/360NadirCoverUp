@@ -53,7 +53,7 @@ def recombine_image(original_path, overlay_path, out_path):
         cv2.imwrite(out_path, out)
 
 
-def recombine_dir(orig_dir, overlay_dir, out_dir, workers=8):
+def recombine_dir(orig_dir, overlay_dir, out_dir, workers=8, limit=0):
     os.makedirs(out_dir, exist_ok=True)
 
     # Supported image extensions
@@ -106,6 +106,13 @@ def recombine_dir(orig_dir, overlay_dir, out_dir, workers=8):
             out_full = os.path.join(out_dir, rel)
             # out dir is flat for top-level originals
             tasks.append((orig_full, overlay_full, out_full))
+    
+    tasks.sort(key=lambda x: x[0])
+    if workers > 0 and len(tasks) > 0:
+        if "limit" in locals() and limit > 0:
+            tasks = tasks[:limit]
+        elif hasattr(args, 'limit') and args.limit > 0:
+            tasks = tasks[:args.limit]
 
     if not tasks:
         print("No matching files found between original and overlay directories.")
@@ -140,6 +147,7 @@ def parse_args():
     # that pass the thread count without `--threads` (controller script) still work.
     p.add_argument("threads_pos", nargs="?", help="Optional positional threads (fallback if --threads not used)")
     p.add_argument("--threads", default=None, help="Number of worker processes (default: 8)")
+    p.add_argument("--limit", type=int, default=0, help="Limit number of frames to process")
     return p.parse_args()
 
 
@@ -157,4 +165,4 @@ if __name__ == "__main__":
     except Exception:
         workers = 8
 
-    recombine_dir(args.orig_dir, args.overlay_dir, args.out_dir, workers=workers)
+    recombine_dir(args.orig_dir, args.overlay_dir, args.out_dir, workers=workers, limit=args.limit)
