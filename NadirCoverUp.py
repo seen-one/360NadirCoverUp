@@ -1,13 +1,14 @@
 import os
 import subprocess
 import sys
+import glob
 
 inputfolder = r"H:\fullfpstest_3\jpg"
 maskImagePath = r"H:\fullfpstest_3\mask.png"
 
 parallel_workers = "8"
 
-feather = 30
+feather = 50
 
 # GPS Tracking Configuration
 cameraHeadingOffset = 0.0   # Degrees to add to GPS heading (e.g., 90 if camera faces right)
@@ -16,7 +17,11 @@ gpxTimeOffset = -11         # Hours to add to GPX time to get true UTC (e.g., -1
 patch_smooth = 50
 debugStep3 = False
 
-limit_frames = 100  # Process only the first n frames; 0 or for all (before frame stepping)
+# Step 6 Specific Configuration
+gpxPath = ""                # Path to GPX file. If empty, will look for the first .gpx in inputfolder.
+video_fps = 24               # FPS of the original timelapse video
+
+limit_frames = 1000  # Process only the first n frames; 0 or for all (before frame stepping)
 
 # Frame step: use every nth frame for donor and final images (1 = use all frames)
 frame_step = 5
@@ -25,15 +30,15 @@ use_all_frames_for_donors = False
 
 inputHeight = 3840
 inputWidth = inputHeight * 2
-#planarSize = inputHeight / 2
 planarSize = inputHeight /2
 planarFov = 160
 
-skipStep1 = False
-skipStep2 = False
-skipStep3 = False
-skipStep4 = False
-skipStep5 = False
+skipStep1 = True
+skipStep2 = True
+skipStep3 = True
+skipStep4 = True
+skipStep5 = True
+skipStep6 = False
 
 OutputStep1 = os.path.join(inputfolder, "1")
 OutputStep2 = os.path.join(inputfolder, "2")
@@ -58,28 +63,28 @@ def RunCmd(cmd, *args):
 
 # Step 1 generate equirectangular to planar top down for all images in folder
 if not skipStep1:
-    print("\n--- Step 1/5: Converting equirectangular to planar top-down ---")
+    print("\n--- Step 1/6: Converting equirectangular to planar top-down ---")
     cmd = ["scripts/1_equirect_to_planar.py", inputfolder, OutputStep1, str(int(planarSize)), str(int(planarFov)), parallel_workers]
     if limit_frames: cmd += ["--limit", str(limit_frames)]
     Run(*cmd)
 
 # Step 2 motion estimation
 if not skipStep2:
-    print("\n--- Step 2/5: Estimating motion (homography) ---")
+    print("\n--- Step 2/6: Estimating motion (homography) ---")
     cmd = [
         "scripts/2_estimate_motion.py",
         "--frames_dir", OutputStep1,
         "--mask_path", maskImagePath,
         "--output_csv", os.path.join(OutputStep2, "motion.csv"),
         "--method", "homography",
-        "--size", "1920"
+        "--size", str(int(planarSize))
     ]
     if limit_frames: cmd += ["--limit", str(limit_frames)]
     Run(*cmd)
 
 # Step 3 fill mask from neighbors
 if not skipStep3:
-    print("\n--- Step 3/5: Filling masked areas from neighbor frames ---")
+    print("\n--- Step 3/6: Filling masked areas from neighbor frames ---")
     donor_step = 1 if use_all_frames_for_donors else frame_step
     cmd = [
         "scripts/3_fill_mask_from_neighbors.py",
@@ -99,6 +104,7 @@ if not skipStep3:
         "--gps_offset", str(cameraHeadingOffset),
         "--gps_threshold", str(gpsSpeedThreshold),
         "--gps_time_offset", str(gpxTimeOffset),
+        "--blend_type", blend_type,
     ]
     if debugStep3:
         cmd.append("--debug")
@@ -107,17 +113,45 @@ if not skipStep3:
 
 # Step 4 convert mask to equirectangular
 if not skipStep4:
-    print("\n--- Step 4/5: Converting patched areas back to equirectangular ---")
+    print("\n--- Step 4/6: Converting patched areas back to equirectangular ---")
     cmd = ["scripts/4_planar_to_equirect.py", OutputStep3, OutputStep4, str(int(inputHeight)), str(int(inputWidth)), str(int(planarFov)), parallel_workers]
     if limit_frames: cmd += ["--limit", str(limit_frames)]
     Run(*cmd)
 
 # Step 5 overlay patched nadir area back onto original image
 if not skipStep5:
-    print("\n--- Step 5/5: Overlaying patched areas onto original images ---")
+    print("\n--- Step 5/6: Overlaying patched areas onto original images ---")
     cmd = ["scripts/5_overlay_nadir.py", inputfolder, OutputStep4, OutputStep5, "--threads", parallel_workers]
     if limit_frames: cmd += ["--limit", str(limit_frames)]
     Run(*cmd)
+
+# Step 6 GPS Tagging and EXIF metadata
+if not skipStep6:
+    print("\n--- Step 6/6: Applying GPS tags and EXIF metadata ---")
+    
+    current_gpx = gpxPath
+    if not current_gpx:
+        gpx_files = glob.glob(os.path.join(inputfolder, "*.gpx"))
+        if gpx_files:
+            current_gpx = gpx_files[0]
+            print(f"Auto-detected GPX: {current_gpx}")
+        else:
+            print("Warning: No GPX file found. Skipping Step 6.")
+            current_gpx = None
+            
+    if current_gpx:
+        # qoocam2panoramax offset is in seconds. NadirCoverUp offset is in hours.
+        offset_seconds = int(gpxTimeOffset * 3600)
+        cmd = [
+            "qoocam2panoramax.py",
+            "--input", OutputStep5,
+            "--gpx", current_gpx,
+            "--fps", str(video_fps),
+            "--heading", str(int(cameraHeadingOffset)),
+            "--offset", str(offset_seconds)
+        ]
+        if limit_frames: cmd += ["--limit", str(limit_frames)]
+        Run(*cmd)
 
 print("\nProcessing complete!")
 
