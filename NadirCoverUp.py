@@ -11,18 +11,18 @@ parallel_workers = "8" # If you have lots of CPU cores
 # GPS Tracking Configuration
 cameraHeadingOffset = 0.0   # Degrees to add to GPS heading (e.g., 90 if camera faces right)
 gpsSpeedThreshold = 2.0     # Minimum speed (m/s) to update heading; below this, hold last heading
-gpxTimezoneOffset = -10         # Hours offset for Qoocam incorrectly reporting local time as UTC (e.g. -10 for AEST)
-gpxCaptureOffset = 2 # qoocam2panoramax's --offset parameter
-patch_smooth = 20 # Feathering of the individual donor patches
-feather = 20 # Feathering of the reconstructed nadir to overlay
-debugStep3 = False # Draw arrows pointing north and sun direction
+gpxTimezoneOffset = -10     # Hours offset for Qoocam incorrectly reporting local time as UTC (e.g. -10 for AEST)
+gpxCaptureOffset = 2        # qoocam2panoramax's --offset parameter
+patch_smooth = 20           # Feathering of the individual donor patches
+feather = 20                # Feathering of the reconstructed nadir to overlay
+debugStep3 = False          # Draw arrows pointing north and sun direction
 
 # Step 6 Specific Configuration
 gpxPath = ""                # Path to GPX file. If empty, will look for the first .gpx in inputfolder.
-video_fps = 24               # FPS of the original timelapse/video
+video_fps = 24              # FPS of the original timelapse/video
 min_distance = 5            # Minimum distance (m) between pictures
 
-limit_frames = 0  # Process only the first n frames; 0 or for all (before frame stepping)
+limit_frames = 0            # Process only the first n frames; 0 or for all (before frame stepping)
 
 # Frame step: use every nth frame for donor and final images (1 = use all frames)
 frame_step = 4

@@ -1,5 +1,12 @@
 #! /usr/bin/env python3
 
+# qoocam2panoramax.py
+# Licensed under the MIT License.
+# Original script Copyright (c) 2023-2025 Projet Panoramax
+# Modified by seen-one
+
+# https://gitlab.com/panoramax/docs/import-scripts/-/blob/main/preprocess/qoocam/qoocam2panoramax.py
+
 import sys, subprocess, os, re, time, argparse, copy, shutil
 from datetime import datetime
 from math import radians, cos, sin, asin, sqrt, degrees, atan2
