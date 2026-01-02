@@ -3,28 +3,30 @@ import subprocess
 import sys
 import glob
 
-inputfolder = r"H:\fullfpstest_3\jpg"
-maskImagePath = r"H:\fullfpstest_3\mask.png"
+inputfolder = r"H:\fullfpstest_4\jpg"
+maskImagePath = r"H:\fullfpstest_4\mask.png"
 
 parallel_workers = "8"
 
-feather = 50
+feather = 20
 
 # GPS Tracking Configuration
 cameraHeadingOffset = 0.0   # Degrees to add to GPS heading (e.g., 90 if camera faces right)
 gpsSpeedThreshold = 2.0     # Minimum speed (m/s) to update heading; below this, hold last heading
-gpxTimeOffset = -11         # Hours to add to GPX time to get true UTC (e.g., -11 if camera saved local time as UTC)
-patch_smooth = 50
+gpxTimezoneOffset = -11         # Hours to add to GPX time to get true UTC (e.g., -11 if camera saved local time as UTC)
+gpxCaptureOffset = 2
+patch_smooth = 20
 debugStep3 = False
 
 # Step 6 Specific Configuration
 gpxPath = ""                # Path to GPX file. If empty, will look for the first .gpx in inputfolder.
 video_fps = 24               # FPS of the original timelapse video
+min_distance = 5            # Minimum distance (m) between pictures
 
-limit_frames = 1000  # Process only the first n frames; 0 or for all (before frame stepping)
+limit_frames = 0  # Process only the first n frames; 0 or for all (before frame stepping)
 
 # Frame step: use every nth frame for donor and final images (1 = use all frames)
-frame_step = 5
+frame_step = 4
 use_all_frames_for_donors = False
 
 
@@ -33,11 +35,11 @@ inputWidth = inputHeight * 2
 planarSize = inputHeight /2
 planarFov = 160
 
-skipStep1 = True
-skipStep2 = True
-skipStep3 = True
-skipStep4 = True
-skipStep5 = True
+skipStep1 = False
+skipStep2 = False
+skipStep3 = False
+skipStep4 = False
+skipStep5 = False
 skipStep6 = False
 
 OutputStep1 = os.path.join(inputfolder, "1")
@@ -45,12 +47,14 @@ OutputStep2 = os.path.join(inputfolder, "2")
 OutputStep3 = os.path.join(inputfolder, "3")
 OutputStep4 = os.path.join(inputfolder, "4")
 OutputStep5 = os.path.join(inputfolder, "5")
+OutputStep6 = os.path.join(inputfolder, "6")
 
 os.makedirs(OutputStep1, exist_ok=True)
 os.makedirs(OutputStep2, exist_ok=True)
 os.makedirs(OutputStep3, exist_ok=True)
 os.makedirs(OutputStep4, exist_ok=True)
 os.makedirs(OutputStep5, exist_ok=True)
+os.makedirs(OutputStep6, exist_ok=True)
 
 def Run(script, *args):
     # Use the same Python interpreter that's running this controller script
@@ -103,8 +107,7 @@ if not skipStep3:
         "--step", str(frame_step),
         "--gps_offset", str(cameraHeadingOffset),
         "--gps_threshold", str(gpsSpeedThreshold),
-        "--gps_time_offset", str(gpxTimeOffset),
-        "--blend_type", blend_type,
+        "--gps_time_offset", str(gpxTimezoneOffset),
     ]
     if debugStep3:
         cmd.append("--debug")
@@ -140,15 +143,15 @@ if not skipStep6:
             current_gpx = None
             
     if current_gpx:
-        # qoocam2panoramax offset is in seconds. NadirCoverUp offset is in hours.
-        offset_seconds = int(gpxTimeOffset * 3600)
         cmd = [
-            "qoocam2panoramax.py",
+            "scripts/qoocam2panoramax.py",
             "--input", OutputStep5,
+            "--output", OutputStep6,
             "--gpx", current_gpx,
             "--fps", str(video_fps),
             "--heading", str(int(cameraHeadingOffset)),
-            "--offset", str(offset_seconds)
+            "--offset", str(gpxCaptureOffset),
+            "--distance", str(min_distance)
         ]
         if limit_frames: cmd += ["--limit", str(limit_frames)]
         Run(*cmd)

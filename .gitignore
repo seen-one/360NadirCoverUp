@@ -181,3 +181,5 @@ cython_debug/
 .cursorindexingignore
 /sample
 /tests
+exiftool.exe
+/exiftool_files

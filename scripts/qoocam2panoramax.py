@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 
-import sys, subprocess, os, re, time, argparse, copy
+import sys, subprocess, os, re, time, argparse, copy, shutil
 from datetime import datetime
 from math import radians, cos, sin, asin, sqrt, degrees, atan2
 from struct import unpack
@@ -232,6 +232,7 @@ if OFFSET != 0:
 if args.nadir:
     nadir = cv2.imread(args.nadir)
 
+kvar = None
 if args.gpx:
     # read GPX file
     with open(args.gpx) as gpxfile:
@@ -305,7 +306,17 @@ if DIR:
             lat = gps_interpolate(float(trkpts[prev_pt]['lat']),float(trkpts[prev_pt+1]['lat']),prev_epoch,next_epoch,TS)
             lon = gps_interpolate(float(trkpts[prev_pt]['lon']),float(trkpts[prev_pt+1]['lon']),prev_epoch,next_epoch,TS)
             alt = None
-        tags.append({'file': DIR+'/'+JPG, 'time': TS, 'lat': lat, 'lon': lon})
+
+        keep = True
+        if len(tags) > 0:
+            for dedup in reversed(range(len(tags))):
+                prev_frame = tags[dedup]
+                if haversine(lat, lon, prev_frame['lat'], prev_frame['lon']) < args.distance:
+                    keep = False
+                    break
+        
+        if keep:
+            tags.append({'file': DIR+'/'+JPG, 'time': TS, 'lat': lat, 'lon': lon})
 
     print(len(tags),'files analyzed, applying EXIF tags', file=sys.stderr)
 elif video:
@@ -390,9 +401,15 @@ for idx in tqdm(range(0,len(tags)), desc='Step 2/2 : Applying EXIF tags'):
         speed = dist / (tags[idx+1]['time']-tags[idx-1]['time']) * 3.6
         # print(dist, tags[idx+1]['time']-tags[idx-1]['time'], speed)
 
-    set_timestamp(tags[idx]['file'],tags[idx]['time'],
+    target_file = tags[idx]['file']
+    if args.output and args.output != os.path.dirname(target_file):
+        out_file = os.path.join(args.output, os.path.basename(target_file))
+        shutil.copy2(target_file, out_file)
+        target_file = out_file
+
+    set_timestamp(target_file,tags[idx]['time'],
             tags[idx]['lat'],tags[idx]['lon'],tags[idx]['alt'] if 'alt' in tags[idx] else None,direction, speed)
-    os.utime(tags[idx]['file'], (tags[idx]['time'], tags[idx]['time']))
+    os.utime(target_file, (tags[idx]['time'], tags[idx]['time']))
     
 if args.output or args.input:
     target_dir = args.output if args.output else args.input
