@@ -428,7 +428,10 @@ for idx in tqdm(range(0,len(tags)), desc='Step 2/2 : Applying EXIF tags'):
 
     set_timestamp(target_file,tags[idx]['time'],
             tags[idx]['lat'],tags[idx]['lon'],tags[idx]['alt'] if 'alt' in tags[idx] else None,direction, speed, args.timezone)
-    os.utime(target_file, (tags[idx]['time'], tags[idx]['time']))
+    
+    # Calculate file modification time adjusted for timezone
+    mod_time = tags[idx]['time'] + (args.timezone * 3600)
+    os.utime(target_file, (mod_time, mod_time))
     
 if args.output or args.input:
     target_dir = args.output if args.output else args.input
