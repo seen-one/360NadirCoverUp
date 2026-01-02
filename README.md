@@ -1,5 +1,7 @@
 
-# NadirCoverUp
+# 360NadirCoverUp
+![before reconstruction](https://github.com/user-attachments/assets/7d02b17f-6cb0-4efe-9897-eaaf51cba333)
+![after reconstruction](https://github.com/user-attachments/assets/0ff5801b-f9bc-4496-ad6b-a42d9d4427ae)
 
 Reconstruction of the nadir area of 360 photos using homography to hide the car where the 360 camera is attached to like in Google Street View.
 
@@ -10,11 +12,17 @@ Vibe coded initially using GitHub Copilot, later with Google Antigravity.
 ## Install
 
 `git clone https://github.com/seen-one/NadirCoverUp.git`
+
 `cd NadirCoverUp`
+
 `python -m venv env`
+
 `.\env\Scripts\activate` (Windows)
+
 `source env/bin/activate` (Linux/Mac)
+
 `pip install -r requirements.txt`
+
 `exit`
 
 On Windows, exiftool.exe should be installed in the same directory as the script.
@@ -29,7 +37,9 @@ The .gpx file should be placed in the same folder as inputfolder.
 If desired, you may edit the other parameters to suit your needs.
 
 `.\env\Scripts\activate` (Windows)
+
 `source env/bin/activate` (Linux/Mac)
+
 `python NadirCoverUp.py`
 
-The script will create a new folder at `OutputStep6` with the processed images, ready for upload to Mapillary or Panoramax. If wanting to upload to Google Street View, you can use ffmpeg to encode a video from `OutputStep5` image sequence.
+The script will create a new folder at `OutputStep6` with the processed images, ready for upload to Mapillary or Panoramax. If wanting to upload to Google Street View, you can use ffmpeg to encode a video from `OutputStep5` image sequence then upload the video along with the .gpx file.
