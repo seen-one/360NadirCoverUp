@@ -35,11 +35,11 @@ inputWidth = inputHeight * 2
 planarSize = inputHeight /2
 planarFov = 160
 
-skipStep1 = False
-skipStep2 = False
-skipStep3 = False
-skipStep4 = False
-skipStep5 = False
+skipStep1 = True
+skipStep2 = True
+skipStep3 = True
+skipStep4 = True
+skipStep5 = True
 skipStep6 = False
 
 OutputStep1 = os.path.join(inputfolder, "1")
@@ -151,7 +151,8 @@ if not skipStep6:
             "--fps", str(video_fps),
             "--heading", str(int(cameraHeadingOffset)),
             "--offset", str(gpxCaptureOffset),
-            "--distance", str(min_distance)
+            "--distance", str(min_distance),
+            "--timezone", str(gpxTimezoneOffset)
         ]
         if limit_frames: cmd += ["--limit", str(limit_frames)]
         Run(*cmd)

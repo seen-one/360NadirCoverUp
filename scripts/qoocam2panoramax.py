@@ -82,7 +82,14 @@ def kvar_load(kvar_file):
                 kv.read(data_count)
     return kvar
 
-def set_timestamp(filename, epoch, lat, lon, alt, direction, speed):
+def format_offset_string(hours):
+    """Convert a timezone offset in hours to ±HH:MM format."""
+    sign = '+' if hours >= 0 else '-'
+    h = int(abs(hours))
+    m = int((abs(hours) - h) * 60)
+    return f"{sign}{h:02d}:{m:02d}"
+
+def set_timestamp(filename, epoch, lat, lon, alt, direction, speed, tz_offset_hours=0):
     new_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(epoch))
     zeroth_ifd = {
         piexif.ImageIFD.Make: args.make,
@@ -94,6 +101,11 @@ def set_timestamp(filename, epoch, lat, lon, alt, direction, speed):
         piexif.ExifIFD.FocalLength: [17, 10],
         piexif.ExifIFD.FNumber: [16, 10]
     }
+    if tz_offset_hours != 0:
+        offset_str = format_offset_string(tz_offset_hours)
+        exif[piexif.ExifIFD.OffsetTime] = offset_str
+        exif[piexif.ExifIFD.OffsetTimeOriginal] = offset_str
+        exif[piexif.ExifIFD.OffsetTimeDigitized] = offset_str
     gps = {piexif.GPSIFD.GPSVersionID: (2, 0, 0, 0),
             piexif.GPSIFD.GPSMapDatum: 'WGS-84',
             piexif.GPSIFD.GPSLatitudeRef: 'N' if lat>=0 else 'S',
@@ -197,6 +209,7 @@ parser.add_argument('--make', default="Kandao", help='Camera "Make" EXIF tag')
 parser.add_argument('--model', default="Qoocam 3 Ultra", help='Camera "Model" EXIF tag')
 parser.add_argument('--nadir', help='Image to add at nadir on final picture')
 parser.add_argument('--limit', type=int, help='Maximum number of pictures to extract from timelapse video (default = no limit)')
+parser.add_argument('--timezone', type=float, default=0, help='Timezone offset in hours to apply to GPX timestamps (e.g. 11 for AEDT)')
 
 #parser.add_argument('--api-url', type=str, help='Set API to query, default from ~/.config/geovisio/config.toml')
 #parser.add_argument('--token', type=str, help='Set TOKEN to use for API auth, default from ~/.config/geovisio/config.toml')
@@ -240,6 +253,8 @@ if args.gpx:
         trkpts = gpx.find_all('trkpt')
         START = trkpts[0].time.string
         EPOCH = datetime.strptime(START, "%Y-%m-%dT%H:%M:%S%z").timestamp() + OFFSET
+        # Note: Timezone offset is applied only when writing EXIF tags, not here
+        # This keeps GPS interpolation consistent with the GPX trackpoint timestamps
         
 elif args.kvar:
     # get the start time from the .kvar filename
@@ -408,7 +423,7 @@ for idx in tqdm(range(0,len(tags)), desc='Step 2/2 : Applying EXIF tags'):
         target_file = out_file
 
     set_timestamp(target_file,tags[idx]['time'],
-            tags[idx]['lat'],tags[idx]['lon'],tags[idx]['alt'] if 'alt' in tags[idx] else None,direction, speed)
+            tags[idx]['lat'],tags[idx]['lon'],tags[idx]['alt'] if 'alt' in tags[idx] else None,direction, speed, args.timezone)
     os.utime(target_file, (tags[idx]['time'], tags[idx]['time']))
     
 if args.output or args.input:
