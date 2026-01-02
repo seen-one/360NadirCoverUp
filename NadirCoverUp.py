@@ -6,21 +6,20 @@ import glob
 inputfolder = r"H:\fullfpstest_4\jpg"
 maskImagePath = r"H:\fullfpstest_4\mask.png"
 
-parallel_workers = "8"
-
-feather = 20
+parallel_workers = "8" # If you have lots of CPU cores
 
 # GPS Tracking Configuration
 cameraHeadingOffset = 0.0   # Degrees to add to GPS heading (e.g., 90 if camera faces right)
 gpsSpeedThreshold = 2.0     # Minimum speed (m/s) to update heading; below this, hold last heading
 gpxTimezoneOffset = -10         # Hours offset for Qoocam incorrectly reporting local time as UTC (e.g. -10 for AEST)
-gpxCaptureOffset = 2
-patch_smooth = 20
-debugStep3 = False
+gpxCaptureOffset = 2 # qoocam2panoramax's --offset parameter
+patch_smooth = 20 # Feathering of the individual donor patches
+feather = 20 # Feathering of the reconstructed nadir to overlay
+debugStep3 = False # Draw arrows pointing north and sun direction
 
 # Step 6 Specific Configuration
 gpxPath = ""                # Path to GPX file. If empty, will look for the first .gpx in inputfolder.
-video_fps = 24               # FPS of the original timelapse video
+video_fps = 24               # FPS of the original timelapse/video
 min_distance = 5            # Minimum distance (m) between pictures
 
 limit_frames = 0  # Process only the first n frames; 0 or for all (before frame stepping)
@@ -35,11 +34,11 @@ inputWidth = inputHeight * 2
 planarSize = inputHeight /2
 planarFov = 160
 
-skipStep1 = True
-skipStep2 = True
-skipStep3 = True
-skipStep4 = True
-skipStep5 = True
+skipStep1 = False
+skipStep2 = False
+skipStep3 = False
+skipStep4 = False
+skipStep5 = False
 skipStep6 = False
 
 OutputStep1 = os.path.join(inputfolder, "1")
