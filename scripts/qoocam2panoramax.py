@@ -90,7 +90,9 @@ def format_offset_string(hours):
     return f"{sign}{h:02d}:{m:02d}"
 
 def set_timestamp(filename, epoch, lat, lon, alt, direction, speed, tz_offset_hours=0):
-    new_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(epoch))
+    # Use gmtime because the GPX timestamps are actually local time mislabeled as UTC
+    # We want to preserve them as-is in DateTimeOriginal (showing local time)
+    new_date = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(epoch))
     zeroth_ifd = {
         piexif.ImageIFD.Make: args.make,
         piexif.ImageIFD.Model: args.model
@@ -102,7 +104,9 @@ def set_timestamp(filename, epoch, lat, lon, alt, direction, speed, tz_offset_ho
         piexif.ExifIFD.FNumber: [16, 10]
     }
     if tz_offset_hours != 0:
-        offset_str = format_offset_string(tz_offset_hours)
+        # Negate because user provides correction offset (e.g. -11 to get UTC)
+        # but EXIF needs actual timezone offset (e.g. +11 for AEDT)
+        offset_str = format_offset_string(-tz_offset_hours)
         exif[piexif.ExifIFD.OffsetTime] = offset_str
         exif[piexif.ExifIFD.OffsetTimeOriginal] = offset_str
         exif[piexif.ExifIFD.OffsetTimeDigitized] = offset_str

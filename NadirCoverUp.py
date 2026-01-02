@@ -13,7 +13,7 @@ feather = 20
 # GPS Tracking Configuration
 cameraHeadingOffset = 0.0   # Degrees to add to GPS heading (e.g., 90 if camera faces right)
 gpsSpeedThreshold = 2.0     # Minimum speed (m/s) to update heading; below this, hold last heading
-gpxTimezoneOffset = -11         # Hours to add to GPX time to get true UTC (e.g., -11 if camera saved local time as UTC)
+gpxTimezoneOffset = -10         # Hours to add to GPX time to get true UTC (e.g., -11 if camera saved local time as UTC)
 gpxCaptureOffset = 2
 patch_smooth = 20
 debugStep3 = False
